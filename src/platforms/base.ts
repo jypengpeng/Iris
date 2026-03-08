@@ -1,0 +1,44 @@
+/**
+ * 用户交互层 —— 平台适配器基类
+ *
+ * 所有平台（Discord、Telegram、Console 等）均需继承此基类。
+ * 平台适配器负责：
+ *   1. 接收用户消息，转换为内部 IncomingMessage 格式
+ *   2. 将 AI 的回复发送给用户
+ */
+
+import { MessageHandler } from '../types';
+
+export abstract class PlatformAdapter {
+  protected messageHandler?: MessageHandler;
+
+  /** 注册消息处理回调（由 Orchestrator 调用） */
+  onMessage(handler: MessageHandler): void {
+    this.messageHandler = handler;
+  }
+
+  /** 启动平台（连接服务、开始监听） */
+  abstract start(): Promise<void>;
+
+  /** 停止平台 */
+  abstract stop(): Promise<void>;
+
+  /** 向指定会话发送文本消息 */
+  abstract sendMessage(sessionId: string, text: string): Promise<void>;
+
+  /**
+   * 流式发送消息（可选覆写）
+   * 默认实现：收集全部文本后调用 sendMessage 一次性发送。
+   * 支持流式的平台（如 Console）可覆写此方法实现逐块输出。
+   */
+  async sendMessageStream(sessionId: string, stream: AsyncIterable<string>): Promise<void> {
+    let full = '';
+    for await (const chunk of stream) { full += chunk; }
+    if (full) await this.sendMessage(sessionId, full);
+  }
+
+  /** 平台名称 */
+  get name(): string {
+    return this.constructor.name;
+  }
+}

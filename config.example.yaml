@@ -1,0 +1,48 @@
+# ==========================================
+#  AI Chat 配置文件示例
+#  复制此文件为 config.yaml 并填入实际值
+# ==========================================
+
+# LLM 配置
+llm:
+  # 提供商: gemini | openai-compatible
+  provider: gemini
+
+  # API 密钥
+  apiKey: your-api-key-here
+
+  # 模型名称
+  model: gemini-2.0-flash
+
+  # API 地址
+  baseUrl: https://generativelanguage.googleapis.com
+
+# 平台配置
+platform:
+  # 类型: console | discord | telegram
+  type: console
+
+  discord:
+    token: your-discord-bot-token
+
+  telegram:
+    token: your-telegram-bot-token
+
+# 存储配置
+storage:
+  # 类型: json-file
+ type: json-file
+
+  # 会话数据目录
+  dir: ./data/sessions
+
+# 系统配置
+system:
+  # 系统提示词（留空则使用默认）
+  systemPrompt: ""
+
+  # 工具执行最大轮次
+  maxToolRounds: 10
+
+  # 流式输出
+  stream: true

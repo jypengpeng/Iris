@@ -1,0 +1,9 @@
+node_modules/
+dist/
+data/
+*.log
+
+# 配置文件（含密钥）
+config.yaml
+config.yml
+.env

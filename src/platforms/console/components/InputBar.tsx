@@ -1,8 +1,5 @@
 /**
- * 底部输入栏
- *
- * 使用 ink-text-input 接收用户输入。
- * 生成中时禁用输入。
+ * 底部输入栏 - IRIS 系统终端风格
  */
 
 import { useState } from 'react';
@@ -24,23 +21,24 @@ export function InputBar({ disabled, onSubmit }: InputBarProps) {
     setValue('');
   };
 
-  if (disabled) {
-    return (
-      <Box marginTop={0}>
-        <Text color="gray">{'> '}</Text>
-      </Box>  
-    );
-  }
-
   return (
-    <Box marginTop={1}>
-      <Text bold color="cyan">{'> '}</Text>
-      <TextInput
-        value={value}
-        onChange={setValue}
-        onSubmit={handleSubmit}
-        placeholder="输入消息…"
-      />
+    <Box marginTop={1} flexDirection="column">
+      <Box>
+        <Text bold color={disabled ? 'gray' : 'cyan'}>
+          IRIS@LOCAL:~ $
+        </Text>
+        {!disabled && (
+          <Box marginLeft={1}>
+            <TextInput
+              value={value}
+              onChange={setValue}
+              onSubmit={handleSubmit}
+              placeholder="..."
+            />
+          </Box>
+        )}
+        {disabled && <Text color="gray"> [BUSY]</Text>}
+      </Box>
     </Box>
   );
 }

@@ -1,12 +1,9 @@
 /**
- * 单条消息渲染
- *
- * 区分 user / assistant 角色，使用不同颜色前缀。
+ * 单条消息渲染 - 极简分界线风格
  */
 
 import { Box, Text } from 'ink';
 
-/** 聊天消息数据结构 */
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -20,16 +17,25 @@ interface MessageItemProps {
 
 export function MessageItem({ role, content, isStreaming }: MessageItemProps) {
   const isUser = role === 'user';
+  const labelColor = isUser ? 'cyan' : 'green';
+  const labelText = isUser ? ' USER ' : ' IRIS ';
 
   return (
-    <Box marginBottom={0} flexDirection="column">
-      <Text wrap="wrap">
-        <Text bold color={isUser ? 'blue' : 'green'}>
-          {isUser ? 'You' : 'AI'}:{' '}
+    <Box marginBottom={1} flexDirection="column">
+      <Box marginBottom={0}>
+        <Text bold color="black" backgroundColor={labelColor}>
+          {labelText}
         </Text>
-        {content}
-        {isStreaming && <Text color="gray">▊</Text>}
-      </Text>
+      </Box>
+      <Box paddingLeft={1}>
+        <Text color={labelColor}>│ </Text>
+        <Box flexGrow={1}>
+          <Text wrap="wrap" color={isUser ? 'white' : 'green'}>
+            {content}
+            {isStreaming && <Text backgroundColor="gray"> </Text>}
+          </Text>
+        </Box>
+      </Box>
     </Box>
   );
 }

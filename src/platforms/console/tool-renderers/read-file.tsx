@@ -1,16 +1,14 @@
 /**
- * read_file 工具渲染器
- *
- * 显示文件路径、行范围和内容摘要。
+ * read_file 工具渲染器 - 极简代码风格
  */
 
 import { Box, Text } from 'ink';
 import { ToolRendererProps } from './default';
 
-const MAX_LINES = 20;
+const MAX_LINES = 15;
 
 interface ReadFileResult {
-  path?:string;
+  path?: string;
   totalLines?: number;
   startLine?: number;
   endLine?: number;
@@ -25,13 +23,15 @@ export function ReadFileRenderer({ result }: ToolRendererProps) {
   const display = truncated ? lines.slice(0, MAX_LINES).join('\n') : (r.content || '');
 
   return (
-    <Box flexDirection="column">
-      <Text color="gray">
-        {r.path} ({r.totalLines} 行，显示 {r.startLine}-{r.endLine})
+    <Box flexDirection="column" paddingLeft={1}>
+      <Text color="gray" italic>
+        # {r.path} ({r.totalLines} lines total, showing {r.startLine}-{r.endLine})
       </Text>
-      <Text color="gray">{display}</Text>
-    {truncated && (
-        <Text color="gray">  … ({lines.length - MAX_LINES} 行已省略)</Text>
+      <Box marginTop={0}>
+        <Text color="gray">{display}</Text>
+      </Box>
+      {truncated && (
+        <Text color="gray">  ... ({lines.length - MAX_LINES} lines omitted)</Text>
       )}
     </Box>
   );

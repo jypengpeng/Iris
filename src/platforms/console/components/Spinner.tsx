@@ -1,14 +1,12 @@
 /**
- * 加载指示器
- *
- * 用纯文本帧动画实现，无外部依赖。
+ * 加载指示器 - 极简点状
  */
 
 import { useState, useEffect, useRef } from 'react';
 import { Text } from 'ink';
 
-const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const INTERVAL = 80;
+const FRAMES = ['·  ', '·· ', '···', ' ··', '  ·', '   '];
+const INTERVAL = 120;
 
 export function Spinner() {
   const [frame, setFrame] = useState(0);

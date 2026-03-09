@@ -2,9 +2,19 @@
   <div class="message-stack" :class="[`message-stack-${role}`, { streaming }]">
     <div class="message-meta-row">
       <div class="message-meta">{{ roleLabel }}</div>
-      <button class="message-copy-btn" type="button" @click="copyMessage">
-        {{ messageCopyText }}
-      </button>
+      <div class="message-actions">
+        <button class="message-action-btn" type="button" @click="copyMessage">
+          {{ messageCopyText }}
+        </button>
+        <button
+          v-if="role === 'model' && !streaming"
+          class="message-action-btn"
+          type="button"
+          @click="emit('retry')"
+        >
+          重试
+        </button>
+      </div>
     </div>
 
     <div
@@ -25,6 +35,8 @@ const props = defineProps<{
   text: string
   streaming?: boolean
 }>()
+
+const emit = defineEmits<{ retry: [] }>()
 
 const roleLabel = computed(() => (props.role === 'user' ? '你' : 'IrisClaw'))
 const messageEl = ref<HTMLDivElement | null>(null)

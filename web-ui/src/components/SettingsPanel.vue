@@ -84,6 +84,25 @@
                 <span class="toggle-switch-ui"></span>
               </label>
             </div>
+
+            <div class="settings-switch-row">
+              <div>
+                <span class="switch-label">界面主题</span>
+                <p class="field-hint">{{ themeHint }}</p>
+              </div>
+              <div class="theme-selector">
+                <button
+                  v-for="opt in themeOptions"
+                  :key="opt.value"
+                  class="theme-option"
+                  :class="{ active: currentTheme === opt.value }"
+                  type="button"
+                  @click="setTheme(opt.value)"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -246,8 +265,27 @@
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { getConfig, updateConfig, getStatus, cfGetStatus, cfSetup, cfListDns, cfAddDns, cfRemoveDns, cfGetSsl, cfSetSsl } from '../api/client'
 import type { CfDnsRecord } from '../api/types'
+import { useTheme, type ThemeMode } from '../composables/useTheme'
 
 const emit = defineEmits<{ close: [] }>()
+
+// ============ 主题 ============
+const { theme: currentTheme, setTheme } = useTheme()
+
+const themeOptions: { value: ThemeMode; label: string }[] = [
+  { value: 'dark', label: '暗色' },
+  { value: 'light', label: '浅色' },
+  { value: 'system', label: '跟随系统' },
+]
+
+const themeHint = computed(() => {
+  const hints: Record<ThemeMode, string> = {
+    dark: '使用深色背景，适合夜间和低光环境。',
+    light: '使用浅色背景，适合日间和明亮环境。',
+    system: '自动跟随操作系统的主题偏好设置。',
+  }
+  return hints[currentTheme.value]
+})
 
 const config = reactive({
   provider: 'gemini',

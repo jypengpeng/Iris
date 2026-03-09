@@ -13,6 +13,7 @@
         :messages="messages"
         :streaming-text="streamingText"
         :is-streaming="isStreaming"
+        @retry="retryLastMessage"
       />
       <ChatInput :disabled="sending" @send="sendMessage" />
     </section>
@@ -24,5 +25,5 @@ import { useChat } from '../composables/useChat'
 import MessageList from '../components/MessageList.vue'
 import ChatInput from '../components/ChatInput.vue'
 
-const { messages, sending, streamingText, isStreaming, sendMessage } = useChat()
+const { messages, sending, streamingText, isStreaming, sendMessage, retryLastMessage } = useChat()
 </script>

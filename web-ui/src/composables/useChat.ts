@@ -160,5 +160,33 @@ export function useChat() {
     })
   }
 
-  return { messages, sending, streamingText, isStreaming, sendMessage }
+  /** 重试：找到最后一条用户消息，移除其后的模型回复，重新发送 */
+  function retryLastMessage() {
+    if (sending.value) return
+
+    // 从后往前找最后一条用户消息
+    let lastUserIdx = -1
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      if (messages.value[i].role === 'user') {
+        lastUserIdx = i
+        break
+      }
+    }
+    if (lastUserIdx < 0) return
+
+    // 提取用户消息文本
+    const userMsg = messages.value[lastUserIdx]
+    const textPart = userMsg.parts.find(p => p.type === 'text')
+    if (!textPart || !textPart.text) return
+
+    const text = textPart.text
+
+    // 移除该用户消息及之后的所有消息（本轮对话）
+    messages.value.splice(lastUserIdx)
+
+    // 重新发送
+    sendMessage(text)
+  }
+
+  return { messages, sending, streamingText, isStreaming, sendMessage, retryLastMessage }
 }

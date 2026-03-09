@@ -28,26 +28,40 @@ src/config/
 
 ```yaml
 llm:
-  provider: gemini              # gemini | openai-compatible
+  provider: gemini              # gemini | openai-compatible | claude
   apiKey: your-api-key-here
   model: gemini-2.0-flash
   baseUrl: https://generativelanguage.googleapis.com
 
 platform:
-  type: console                 # console | discord | telegram
+  type: console                 # console | discord | telegram | web
   discord:
     token: your-discord-bot-token
   telegram:
     token: your-telegram-bot-token
+  web:
+    port: 3000
+    host: 127.0.0.1             # 0.0.0.0 允许外部访问
 
 storage:
-  type: json-file
-  dir: ./data/sessions
+  type: json-file               # json-file | sqlite
+  dir: ./data/sessions          # json-file 的数据目录
+  dbPath: ./data/irisclaw.db    # sqlite 的数据库路径
 
 system:
   systemPrompt: ""
   maxToolRounds: 10
   stream: true
+
+# 可选：长期记忆
+memory:
+  enabled: false
+  dbPath: ./data/memory.db
+
+# 可选：Cloudflare 集成（通过 Web GUI 配置）
+cloudflare:
+  apiToken: your-cloudflare-api-token
+  zoneId: auto
 ```
 
 ## 默认值
@@ -59,12 +73,18 @@ system:
 | llm.baseUrl (gemini) | `https://generativelanguage.googleapis.com` |
 | llm.model (openai-compatible) | `gpt-4o` |
 | llm.baseUrl (openai-compatible) | `https://api.openai.com` |
+| llm.model (claude) | `claude-sonnet-4-6` |
+| llm.baseUrl (claude) | `https://api.anthropic.com` |
 | platform.type | `console` |
+| platform.web.port | `3000` |
+| platform.web.host | `127.0.0.1` |
 | storage.type | `json-file` |
 | storage.dir | `./data/sessions` |
 | system.systemPrompt | 空（使用代码内默认提示词） |
 | system.maxToolRounds | `10` |
 | system.stream | `true` |
+| memory.enabled | `false` |
+| memory.dbPath | `./data/memory.db` |
 
 ## 新增配置项步骤
 

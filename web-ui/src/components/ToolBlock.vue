@@ -1,5 +1,11 @@
 <template>
-  <div class="tool-block" :class="[type, { open }]">
+  <div v-if="collapsed" class="tool-block collapsed" :class="type">
+    <span class="tool-compact">
+      <span class="tool-compact-icon">{{ type === 'call' ? '⚡' : '✓' }}</span>
+      {{ name }}
+    </span>
+  </div>
+  <div v-else class="tool-block" :class="[type, { open }]">
     <button
       class="tool-header"
       type="button"
@@ -24,6 +30,7 @@ const props = defineProps<{
   type: 'call' | 'response'
   name: string
   data: unknown
+  collapsed?: boolean
 }>()
 
 const open = ref(false)

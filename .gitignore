@@ -9,4 +9,7 @@ web-ui/node_modules/
 config.yaml
 config.yml
 .env
-scripts
+
+# 便携版 Node.js（启动脚本自动下载）
+node/
+node-download.zip

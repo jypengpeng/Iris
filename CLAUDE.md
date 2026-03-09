@@ -99,6 +99,29 @@ npm start            # 运行编译后的 dist/index.js
 
 详细扩展指南见 `docs/` 目录。
 
+## Windows 一键部署
+
+`启动.bat` + `scripts/*.bat` 实现解压即用，无需预装 Node.js：
+
+```
+启动.bat                     # 入口：调用子脚本 → 前台运行 node（关窗口即停服务）
+scripts/
+├── env.bat                  # 公共环境变量（Node v22.14.0、路径常量）
+├── setup-node.bat           # 检测/下载 Node.js 便携版（PowerShell）
+├── setup-deps.bat           # npm install + npm run build（有缓存跳过）
+└── setup-config.bat         # 首次生成 config.yaml（Web GUI 默认配置）
+```
+
+首次运行自动下载 Node.js → 安装依赖 → 构建 → 提示填写 API Key → 启动 + 打开浏览器。再次运行跳过所有安装步骤，秒启动。
+
+## Linux 部署
+
+`deploy/` 目录包含生产部署配置文件：
+- `irisclaw.service`：systemd 服务文件
+- `nginx.conf`：Nginx 反代配置（HTTPS + Let's Encrypt + SSE 特殊处理）
+
+详见 `docs/deploy.md`。
+
 ## 约定
 
 - TypeScript 严格模式，ES2022 目标，CommonJS 模块

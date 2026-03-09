@@ -52,6 +52,16 @@ export class SqliteStorage extends StorageProvider {
       .run(sessionId, JSON.stringify(normalized));
   }
 
+  async truncateHistory(sessionId: string, keepCount: number): Promise<void> {
+    this.db
+      .prepare(
+        `DELETE FROM messages WHERE session_id = ? AND id NOT IN (
+          SELECT id FROM messages WHERE session_id = ? ORDER BY id LIMIT ?
+        )`
+      )
+      .run(sessionId, sessionId, keepCount);
+  }
+
   async clearHistory(sessionId: string): Promise<void> {
     this.db
       .prepare('DELETE FROM messages WHERE session_id = ?')
@@ -65,22 +75,4 @@ export class SqliteStorage extends StorageProvider {
     return rows.map(row => row.session_id);
   }
 
-  /** 统一 Content 的字段顺序：role → parts → usageMetadata → 其余 */
-  private normalize(content: Content): Content {
-    const known = new Set(['role', 'parts', 'usageMetadata']);
-    const normalized: Content = {
-      role: content.role,
-      parts: content.parts,
-    };
-    if (content.usageMetadata) {
-      normalized.usageMetadata = content.usageMetadata;
-    }
-    // 保留 Gemini API 可能附加的其他未知字段
-    for (const [k, v] of Object.entries(content)) {
-      if (!known.has(k)) {
-        (normalized as unknown as Record<string, unknown>)[k] = v;
-      }
-    }
-    return normalized;
-  }
 }

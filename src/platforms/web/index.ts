@@ -187,6 +187,7 @@ export class WebPlatform extends PlatformAdapter {
     const sessions = createSessionsHandlers(storage);
     this.router.get('/api/sessions', sessions.list);
     this.router.get('/api/sessions/:id/messages', sessions.getMessages);
+    this.router.delete('/api/sessions/:id/messages', sessions.truncateMessages);
     this.router.delete('/api/sessions/:id', sessions.remove);
 
     // 配置管理 API

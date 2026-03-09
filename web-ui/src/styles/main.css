@@ -25,7 +25,7 @@
   --text-secondary: #c7cee9;
   --text-tertiary: #97a1c7;
   --text-muted: #727ca1;
-  --border-soft: rgba(255, 255, 255, 0.08);
+  --border-soft: rgba(var(--tint-rgb), 0.08);
   --border-strong: rgba(166, 176, 255, 0.18);
   --border-accent: rgba(139, 124, 255, 0.28);
   --error: #ff7c7c;
@@ -41,6 +41,7 @@
   --radius-md: 18px;
   --radius-lg: 24px;
   --radius-xl: 32px;
+  --tint-rgb: 255, 255, 255;
   --transition-fast: 160ms cubic-bezier(0.22, 1, 0.36, 1);
   --transition-medium: 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -82,6 +83,7 @@
   --shadow-sm: 0 14px 28px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 22px 54px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 34px 90px rgba(0, 0, 0, 0.14);
+  --tint-rgb: 0, 0, 0;
   --shadow-accent: 0 0 0 1px rgba(110, 94, 255, 0.18), 0 24px 48px rgba(91, 76, 201, 0.12);
 }
 
@@ -101,14 +103,6 @@
   border-color: rgba(110, 94, 255, 0.28);
 }
 
-:root[data-theme="light"] .sidebar {
-  border-right-color: rgba(0, 0, 0, 0.08);
-}
-
-:root[data-theme="light"] .message-code-shell {
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
 :root[data-theme="light"] .tool-block.call {
   border-left-color: rgba(110, 94, 255, 0.3);
 }
@@ -117,127 +111,8 @@
   border-left-color: rgba(26, 154, 90, 0.3);
 }
 
-/*
- * 浅色主题：批量覆盖硬编码 rgba(255,255,255,...) 组件样式
- * 暗色主题中 rgba(255,255,255, low-alpha) 产生微妙亮色叠加，
- * 浅色主题中需替换为 rgba(0,0,0, low-alpha) 产生对等的微妙暗色叠加。
- */
-:root[data-theme="light"] input,
-:root[data-theme="light"] textarea,
-:root[data-theme="light"] select {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.1);
-}
-
-:root[data-theme="light"] input:hover,
-:root[data-theme="light"] textarea:hover,
-:root[data-theme="light"] select:hover {
-  background: rgba(0, 0, 0, 0.05);
-  border-color: rgba(0, 0, 0, 0.14);
-}
-
-:root[data-theme="light"] input:focus,
-:root[data-theme="light"] textarea:focus,
-:root[data-theme="light"] select:focus {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-:root[data-theme="light"] .settings-switch-row {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.06);
-}
-
-:root[data-theme="light"] .sidebar-item {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.05);
-}
-
-:root[data-theme="light"] .sidebar-item:hover {
-  background: rgba(0, 0, 0, 0.06);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-:root[data-theme="light"] .sidebar-item.active {
-  background: rgba(110, 94, 255, 0.08);
-  border-color: rgba(110, 94, 255, 0.16);
-}
-
-:root[data-theme="light"] .input-shell {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-:root[data-theme="light"] .tool-block {
-  background: rgba(0, 0, 0, 0.02);
-  border-color: rgba(0, 0, 0, 0.06);
-}
-
-:root[data-theme="light"] .tool-header:hover {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-:root[data-theme="light"] .settings-section {
-  background: rgba(0, 0, 0, 0.02);
-  border-color: rgba(0, 0, 0, 0.06);
-}
-
-:root[data-theme="light"] .settings-pill {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-:root[data-theme="light"] .tool-tag {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.06);
-}
-
-:root[data-theme="light"] .toggle-switch-ui {
-  background: rgba(0, 0, 0, 0.12);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-:root[data-theme="light"] .message-code-toolbar {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-:root[data-theme="light"] .welcome-tip {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.06);
-}
-
 :root[data-theme="light"] .btn-save {
   box-shadow: 0 8px 24px rgba(110, 94, 255, 0.2);
-}
-
-:root[data-theme="light"] .chat-topbar {
-  border-bottom-color: rgba(0, 0, 0, 0.06);
-}
-
-:root[data-theme="light"] .input-area {
-  border-top-color: rgba(0, 0, 0, 0.04);
-}
-
-:root[data-theme="light"] .cf-dns-table {
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-:root[data-theme="light"] .cf-dns-header {
-  background: rgba(0, 0, 0, 0.03);
-  border-bottom-color: rgba(0, 0, 0, 0.06);
-}
-
-:root[data-theme="light"] .cf-dns-row:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-:root[data-theme="light"] .cf-dns-add {
-  background: rgba(0, 0, 0, 0.02);
-  border-color: rgba(0, 0, 0, 0.06);
-}
-
-:root[data-theme="light"] .cf-zone-card {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.06);
 }
 
 :root[data-theme="light"] .settings-panel {
@@ -370,8 +245,8 @@ select:focus-visible {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    linear-gradient(rgba(var(--tint-rgb), 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--tint-rgb), 0.02) 1px, transparent 1px);
   background-size: 84px 84px;
   mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.8), transparent 85%);
 }
@@ -407,7 +282,7 @@ select:focus-visible {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(var(--tint-rgb), 0.04);
   pointer-events: none;
 }
 
@@ -492,15 +367,15 @@ select:focus-visible {
   gap: 12px;
   padding: 14px 15px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--tint-rgb), 0.03);
   border: 1px solid transparent;
   color: var(--text-secondary);
   text-decoration: none;
 }
 
 .sidebar-nav-link:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.06);
+  border-color: rgba(var(--tint-rgb), 0.08);
   transform: translateY(-1px);
 }
 
@@ -518,12 +393,12 @@ select:focus-visible {
   width: 42px;
   height: 42px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--tint-rgb), 0.05);
   flex-shrink: 0;
 }
 
 .sidebar-nav-link.router-link-active .sidebar-nav-icon {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(var(--tint-rgb), 0.12);
 }
 
 .sidebar-nav-copy {
@@ -558,8 +433,8 @@ select:focus-visible {
   width: 100%;
   padding: 18px;
   border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.04);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
   box-shadow: var(--shadow-sm);
 }
 
@@ -613,8 +488,8 @@ select:focus-visible {
   gap: 8px;
   padding: 18px;
   border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(var(--tint-rgb), 0.03);
+  border: 1px dashed rgba(var(--tint-rgb), 0.12);
   color: var(--text-tertiary);
 }
 
@@ -654,7 +529,7 @@ select:focus-visible {
   min-width: 0;
   padding: 14px 16px;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--tint-rgb), 0.03);
   border: 1px solid transparent;
   color: var(--text-secondary);
   text-align: left;
@@ -677,8 +552,8 @@ select:focus-visible {
 }
 
 .session-item:hover .session-button {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.06);
+  border-color: rgba(var(--tint-rgb), 0.08);
   transform: translateY(-1px);
 }
 
@@ -715,7 +590,7 @@ select:focus-visible {
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--tint-rgb), 0.03);
 }
 
 .session-item:hover .btn-delete-session,
@@ -742,8 +617,8 @@ select:focus-visible {
   gap: 12px;
   padding: 14px 16px;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(var(--tint-rgb), 0.04);
+  border: 1px solid rgba(var(--tint-rgb), 0.05);
 }
 
 .status-dot {
@@ -779,14 +654,14 @@ select:focus-visible {
   width: 100%;
   padding: 13px 16px;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--tint-rgb), 0.05);
   border: 1px solid var(--border-soft);
   color: var(--text-secondary);
   font-weight: 600;
 }
 
 .btn-settings:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.08);
   transform: translateY(-1px);
 }
 
@@ -851,7 +726,7 @@ select:focus-visible {
   justify-content: space-between;
   gap: 16px;
   padding: 26px 28px 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(var(--tint-rgb), 0.05);
 }
 
 .chat-topbar-main {
@@ -998,7 +873,7 @@ select:focus-visible {
   overflow: hidden;
   margin: 12px 0;
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
   background: rgba(8, 12, 24, 0.88);
 }
 
@@ -1008,8 +883,8 @@ select:focus-visible {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(var(--tint-rgb), 0.06);
+  background: rgba(var(--tint-rgb), 0.04);
 }
 
 .message-code-label {
@@ -1022,15 +897,15 @@ select:focus-visible {
 .message-code-copy {
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.05);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
   color: var(--text-secondary);
   font-size: 0.8rem;
   cursor: pointer;
 }
 
 .message-code-copy:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(var(--tint-rgb), 0.1);
 }
 
 .message-code-copy.copied {
@@ -1081,8 +956,8 @@ select:focus-visible {
   padding: 18px;
   text-align: left;
   border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.04);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
   box-shadow: var(--shadow-sm);
 }
 
@@ -1141,7 +1016,7 @@ select:focus-visible {
 
 .message-model {
   background: linear-gradient(180deg, rgba(29, 37, 64, 0.92), rgba(20, 25, 47, 0.86));
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
   border-bottom-left-radius: 8px;
 }
 
@@ -1182,7 +1057,7 @@ select:focus-visible {
   border-radius: 16px;
   overflow-x: auto;
   margin: 10px 0;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
 }
 
 .message pre code {
@@ -1302,6 +1177,32 @@ select:focus-visible {
   display: block;
 }
 
+.tool-block.collapsed {
+  display: inline-flex;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.tool-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(var(--tint-rgb), 0.05);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.tool-compact-icon {
+  font-size: 0.72rem;
+}
+
 .input-area {
   padding: 0 28px 28px;
 }
@@ -1315,7 +1216,7 @@ select:focus-visible {
   padding: 18px;
   border-radius: 28px;
   background: linear-gradient(180deg, rgba(18, 24, 44, 0.9), rgba(15, 20, 37, 0.85));
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
   box-shadow: var(--shadow-md);
 }
 
@@ -1348,8 +1249,8 @@ select:focus-visible {
   max-height: 200px;
   padding: 16px 18px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.04);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
   color: var(--text-primary);
   resize: none;
   outline: none;
@@ -1415,7 +1316,7 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   background: linear-gradient(180deg, rgba(22, 29, 53, 0.98), rgba(12, 16, 31, 0.96));
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
@@ -1428,7 +1329,7 @@ select:focus-visible {
   justify-content: space-between;
   gap: 16px;
   padding: 26px 28px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(var(--tint-rgb), 0.06);
 }
 
 .settings-title-group {
@@ -1458,15 +1359,15 @@ select:focus-visible {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.05);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
   color: var(--text-secondary);
   font-size: 1.45rem;
   cursor: pointer;
 }
 
 .btn-close:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.08);
   color: var(--text-primary);
 }
 
@@ -1485,8 +1386,8 @@ select:focus-visible {
   gap: 18px;
   padding: 20px;
   border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.035);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
 }
 
 .settings-section-head {
@@ -1578,16 +1479,16 @@ select:focus-visible {
 
 .deploy-badge.subtle,
 .deploy-output-status.disabled {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.05);
+  border-color: rgba(var(--tint-rgb), 0.08);
   color: var(--text-tertiary);
 }
 
 .deploy-detect {
   padding: 18px;
   border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.035);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
   margin-bottom: 18px;
 }
 
@@ -1616,8 +1517,8 @@ select:focus-visible {
   flex-wrap: wrap;
   padding: 12px 14px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(var(--tint-rgb), 0.03);
+  border: 1px solid rgba(var(--tint-rgb), 0.05);
 }
 
 .detect-item + .detect-item {
@@ -1711,8 +1612,8 @@ select:focus-visible {
   gap: 10px;
   padding: 12px 14px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.04);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
 }
 
 .deploy-form .form-group.inline label {
@@ -1740,8 +1641,8 @@ select:focus-visible {
 }
 
 .deploy-tab {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.04);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
   color: var(--text-secondary);
 }
 
@@ -1759,7 +1660,7 @@ select:focus-visible {
   flex-direction: column;
   border-radius: 24px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
   background: rgba(9, 12, 25, 0.82);
 }
 
@@ -1780,22 +1681,22 @@ select:focus-visible {
   flex-wrap: wrap;
   gap: 12px;
   padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
+  border-top: 1px solid rgba(var(--tint-rgb), 0.06);
+  background: rgba(var(--tint-rgb), 0.03);
 }
 
 .btn-copy,
 .btn-download,
 .btn-cancel {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.05);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
   color: var(--text-secondary);
 }
 
 .btn-copy:hover,
 .btn-download:hover,
 .btn-cancel:hover {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(var(--tint-rgb), 0.09);
 }
 
 .btn-deploy {
@@ -1819,8 +1720,8 @@ select:focus-visible {
   margin-top: 18px;
   padding: 18px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.035);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
 }
 
 .deploy-step {
@@ -1830,7 +1731,7 @@ select:focus-visible {
   align-items: flex-start;
   padding-top: 12px;
   margin-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid rgba(var(--tint-rgb), 0.06);
 }
 
 .deploy-step:first-of-type {
@@ -1868,7 +1769,7 @@ select:focus-visible {
   padding: 26px;
   border-radius: 26px;
   background: linear-gradient(180deg, rgba(22, 29, 53, 0.98), rgba(12, 16, 31, 0.96));
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
   box-shadow: var(--shadow-lg);
 }
 
@@ -1989,8 +1890,8 @@ select:focus-visible {
   width: 100%;
   padding: 12px 14px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.045);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
   color: var(--text-primary);
   outline: none;
 }
@@ -2020,8 +1921,8 @@ select:focus-visible {
   gap: 16px;
   padding: 16px 18px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(var(--tint-rgb), 0.04);
+  border: 1px solid rgba(var(--tint-rgb), 0.05);
 }
 
 /* 主题选择器 */
@@ -2076,8 +1977,8 @@ select:focus-visible {
   position: relative;
   display: inline-flex;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.12);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
 }
 
 .toggle-switch-ui::after {
@@ -2207,8 +2108,8 @@ select:focus-visible {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.04);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
   border-radius: 14px;
   margin-bottom: 6px;
 }
@@ -2223,7 +2124,7 @@ select:focus-visible {
   font-size: 0.76rem;
   padding: 4px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.06);
   color: var(--text-muted);
 }
 .cf-zone-status.active {
@@ -2232,7 +2133,7 @@ select:focus-visible {
 }
 
 .cf-dns-table {
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
   border-radius: 14px;
   overflow: hidden;
   font-size: 0.82rem;
@@ -2248,7 +2149,7 @@ select:focus-visible {
 }
 
 .cf-dns-header {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--tint-rgb), 0.04);
   color: var(--text-muted);
   font-size: 0.74rem;
   text-transform: uppercase;
@@ -2256,10 +2157,10 @@ select:focus-visible {
 }
 
 .cf-dns-row {
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-top: 1px solid rgba(var(--tint-rgb), 0.04);
   color: var(--text-secondary);
 }
-.cf-dns-row:hover { background: rgba(255, 255, 255, 0.03); }
+.cf-dns-row:hover { background: rgba(var(--tint-rgb), 0.03); }
 
 .cf-dns-type {
   font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
@@ -2297,9 +2198,9 @@ select:focus-visible {
 .cf-dns-add-type {
   width: 80px;
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(var(--tint-rgb), 0.045);
   color: var(--text-primary);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
   border-radius: 12px;
   font-size: 0.82rem;
   outline: none;
@@ -2309,9 +2210,9 @@ select:focus-visible {
   flex: 1;
   min-width: 100px;
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(var(--tint-rgb), 0.045);
   color: var(--text-primary);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
   border-radius: 12px;
   font-size: 0.82rem;
   outline: none;

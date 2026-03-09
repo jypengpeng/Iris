@@ -58,16 +58,18 @@
           </button>
 
           <ToolBlock
-            v-else-if="part.type === 'function_call' && !collapsedTools.has(i)"
+            v-else-if="part.type === 'function_call'"
             type="call"
             :name="part.name!"
             :data="part.args"
+            :collapsed="collapsedTools.has(i)"
           />
           <ToolBlock
-            v-else-if="part.type === 'function_response' && !collapsedTools.has(i)"
+            v-else-if="part.type === 'function_response'"
             type="response"
             :name="part.name!"
             :data="part.response"
+            :collapsed="collapsedTools.has(i)"
           />
         </template>
       </template>

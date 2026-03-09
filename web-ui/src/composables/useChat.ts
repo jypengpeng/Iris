@@ -160,8 +160,8 @@ export function useChat() {
     })
   }
 
-  /** 重试：找到最后一条用户消息，移除其后的模型回复，重新发送 */
-  function retryLastMessage() {
+  /** 重试：截断后端历史，移除前端消息，重新发送 */
+  async function retryLastMessage() {
     if (sending.value) return
 
     // 从后往前找最后一条用户消息
@@ -181,10 +181,30 @@ export function useChat() {
 
     const text = textPart.text
 
+    // 提前置忙，防止异步截断期间重复触发
+    sending.value = true
+
+    // 先截断后端历史，确保前后端一致
+    if (currentSessionId.value) {
+      try {
+        await api.truncateMessages(currentSessionId.value, lastUserIdx)
+      } catch (e) {
+        // 截断失败，提示用户并中止重试以保持前后端一致
+        const detail = e instanceof Error ? e.message : String(e)
+        messages.value.push({
+          role: 'model',
+          parts: [{ type: 'text', text: `重试失败: 无法截断历史记录 — ${detail}` }],
+        })
+        sending.value = false
+        return
+      }
+    }
+
     // 移除该用户消息及之后的所有消息（本轮对话）
     messages.value.splice(lastUserIdx)
 
-    // 重新发送
+    // 解除忙状态后重新发送（sendMessage 内部会重新置 sending = true）
+    sending.value = false
     sendMessage(text)
   }
 

@@ -37,6 +37,13 @@ export async function deleteSession(sessionId: string): Promise<void> {
   await request(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
 }
 
+export async function truncateMessages(sessionId: string, keepCount: number): Promise<void> {
+  await request(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messages?keepCount=${keepCount}`,
+    { method: 'DELETE' },
+  )
+}
+
 export async function getStatus(): Promise<StatusInfo> {
   const res = await request('/api/status')
   return res.json()

@@ -1,9 +1,10 @@
 /**
  * 会话管理 API 处理器
  *
- * GET    /api/sessions              — 列出所有会话
- * GET    /api/sessions/:id/messages — 获取会话历史
- * DELETE /api/sessions/:id          — 清除会话历史
+ * GET    /api/sessions                       — 列出所有会话
+ * GET    /api/sessions/:id/messages          — 获取会话历史
+ * DELETE /api/sessions/:id                   — 清除会话历史
+ * DELETE /api/sessions/:id/messages?keepCount=N — 截断会话历史
  */
 
 import * as http from 'http';
@@ -53,6 +54,18 @@ export function createSessionsHandlers(storage: StorageProvider) {
     /** DELETE /api/sessions/:id */
     async remove(_req: http.IncomingMessage, res: http.ServerResponse, params: RouteParams) {
       await storage.clearHistory(params.id);
+      sendJSON(res, 200, { ok: true });
+    },
+
+    /** DELETE /api/sessions/:id/messages?keepCount=N */
+    async truncateMessages(req: http.IncomingMessage, res: http.ServerResponse, params: RouteParams) {
+      const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+      const keepCount = parseInt(url.searchParams.get('keepCount') ?? '', 10);
+      if (isNaN(keepCount) || keepCount < 0) {
+        sendJSON(res, 400, { error: '参数 keepCount 无效' });
+        return;
+      }
+      await storage.truncateHistory(params.id, keepCount);
       sendJSON(res, 200, { ok: true });
     },
   };

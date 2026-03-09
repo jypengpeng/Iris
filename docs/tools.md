@@ -9,22 +9,27 @@
 ```
 src/tools/
 ├── registry.ts          ToolRegistry 工具注册中心
+├── utils.ts             公共工具函数（路径安全校验等）
 └── builtin/
-    └── example.ts       内置示例工具
+    ├── example.ts       示例工具
+    ├── read-file.ts     读取文件内容（带行号）
+    ├── search-replace.ts搜索替换（支持正则）
+    ├── apply-diff.ts    应用 unified diff 补丁
+    └── terminal.ts      执行 Shell 命令
 ```
 
 ## ToolRegistry 接口
 
 ```typescript
 class ToolRegistry {
-  register(tool: ToolDefinition): void;        // 注册单个工具
-  registerAll(tools: ToolDefinition[]): void;   // 批量注册
-  unregister(name: string): boolean;            // 注销
-  get(name: string): ToolDefinition | undefined;// 获取
-  execute(name: string, args: Record<string, unknown>): Promise<unknown>; // 执行
-  getDeclarations(): FunctionDeclaration[];     // 获取所有声明（供 LLM）
-  listTools(): string[];                        // 列出工具名
-  size: number;                                 // 工具数量
+  register(tool: ToolDefinition): void;
+  registerAll(tools: ToolDefinition[]): void;
+  unregister(name: string): boolean;
+  get(name: string): ToolDefinition | undefined;
+  execute(name: string, args: Record<string, unknown>): Promise<unknown>;
+  getDeclarations(): FunctionDeclaration[];   // 获取所有声明（供 LLM）
+  listTools(): string[];
+  size: number;
 }
 ```
 
@@ -33,13 +38,13 @@ class ToolRegistry {
 ```typescript
 interface ToolDefinition {
   declaration: FunctionDeclaration;  // 工具声明（供 LLM 识别）
-  handler: ToolHandler;             // 执行器函数
+  handler: ToolHandler;              // 执行器函数
 }
 
 interface FunctionDeclaration {
   name: string;
   description: string;
-  parameters?: {                    // JSON Schema 格式
+  parameters?: {
     type: 'object';
     properties: Record<string, ParameterSchema>;
     required?: string[];
@@ -49,37 +54,32 @@ interface FunctionDeclaration {
 type ToolHandler = (args: Record<string, unknown>) => Promise<unknown>;
 ```
 
-## 新增工具步骤
+## 内置工具
 
-1. 创建 `src/tools/builtin/工具名.ts`（或在其他目录）
-2. 导出一个或多个 `ToolDefinition` 对象
-3. 在 `src/index.ts` 中 import 并调用 `tools.register()` 或 `tools.registerAll()`
+| 工具名 | 文件 | 功能 |
+|--------|------|------|
+| `read_file` | `read-file.ts` | 读取文本文件，返回带行号内容，支持指定行范围 |
+| `search_replace` | `search-replace.ts` | 搜索/替换文件内容，支持正则表达式 |
+| `apply_diff` | `apply-diff.ts` | 应用 unified diff 补丁，支持多 hunk |
+| `terminal` | `terminal.ts` | 执行 Shell 命令，支持超时和工作目录 |
+| `memory_search` | 由 `memory/tools.ts` 动态创建 | 搜索长期记忆 |
+| `memory_add` | 同上 | 保存记忆 |
+| `memory_delete` | 同上 | 删除记忆 |
 
-## 示例：创建一个新工具
+## 路径安全
+
+内置的文件操作工具共用 `resolveProjectPath()` 函数（`src/tools/utils.ts`）进行路径校验，防止路径穿越攻击：
 
 ```typescript
-// src/tools/builtin/my_tool.ts
-import { ToolDefinition } from '../../types';
-
-export const myTool: ToolDefinition = {
-  declaration: {
-    name: 'my_tool',
-    description: '这个工具做什么',
-    parameters: {
-      type: 'object',
-      properties: {
-        param1: { type: 'string', description: '参数说明' },
-      },
-      required: ['param1'],
-    },
-  },
-  handler: async (args) => {
-    const param1 = args.param1 as string;
-    // 执行逻辑
-    return { result: '...' };
-  },
-};
+// 解析路径并校验是否在项目目录内
+function resolveProjectPath(inputPath: string): string;
 ```
+
+## 新增工具步骤
+
+1. 创建 `src/tools/builtin/工具名.ts`
+2. 导出 `ToolDefinition` 对象
+3. 在 `src/index.ts` 中 import 并调用 `tools.register()` 或 `tools.registerAll()`
 
 ## 注意事项
 

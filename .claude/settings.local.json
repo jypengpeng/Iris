@@ -7,7 +7,8 @@
       "Bash(ls:*)",
       "mcp__exa__web_search_exa",
       "Bash(npx vue-tsc:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:openclawlaunch.com)"
     ]
   }
 }

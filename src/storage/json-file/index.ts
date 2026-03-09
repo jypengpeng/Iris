@@ -54,23 +54,14 @@ export class JsonFileStorage extends StorageProvider {
     }
   }
 
-  /** 统一 Content 的字段顺序：role → parts → usageMetadata → 其余 */
-  private normalize(content: Content): Content {
-    const known = new Set(['role', 'parts', 'usageMetadata']);
-    const normalized: Content = {
-      role: content.role,
-      parts: content.parts,
-    };
-    if (content.usageMetadata) {
-      normalized.usageMetadata = content.usageMetadata;
-    }
-    // 保留 Gemini API 可能附加的其他未知字段
-    for (const [k, v] of Object.entries(content)) {
-      if (!known.has(k)) {
-        (normalized as unknown as Record<string, unknown>)[k] = v;
-      }
-    }
-    return normalized;
+  async truncateHistory(sessionId: string, keepCount: number): Promise<void> {
+    await this.withLock(sessionId, async () => {
+      const history = await this.getHistory(sessionId);
+      if (history.length <= keepCount) return;
+      const truncated = history.slice(0, keepCount);
+      await this.ensureDir();
+      await fs.writeFile(this.filePath(sessionId), JSON.stringify(truncated, null, 2), 'utf-8');
+    });
   }
 
   async clearHistory(sessionId: string): Promise<void> {

@@ -8,6 +8,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { ToolDefinition } from '../../types';
+import { resolveProjectPath } from '../utils';
 
 /** 支持的文本文件扩展名 */
 const TEXT_EXTENSIONS = new Set([
@@ -83,11 +84,7 @@ export const readFile: ToolDefinition = {
     const endLine = args.endLine as number | undefined;
 
     // 安全检查：禁止路径穿越
-    const resolved = path.resolve(filePath);
-    const cwd = process.cwd();
-    if (resolved !== cwd && !resolved.startsWith(cwd + path.sep)) {
-      throw new Error(`路径超出项目目录: ${filePath}`);
-    }
+    const resolved = resolveProjectPath(filePath);
 
     // 文件类型检查
     if (!isTextFile(filePath)) {

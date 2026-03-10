@@ -3,6 +3,11 @@
  *
  * 封装 MCP SDK Client，管理单个 MCP 服务器的连接、工具列表和工具调用。
  * SDK 为 ESM-only，通过动态 import() 加载。
+ *
+ * 支持三种传输方式：
+ *   - stdio:          通过子进程标准输入输出通信
+ *   - sse:             Server-Sent Events（HTTP 长连接）
+ *   - streamable-http: Streamable HTTP（MCP 新版协议）
  */
 
 import { MCPServerConfig } from '../config/types';
@@ -54,37 +59,18 @@ export class MCPClient {
     this._error = undefined;
 
     try {
-      // 动态加载 ESM SDK（subpath exports 需要 node16+ moduleResolution，此处用 @ts-ignore）
-      // @ts-ignore — ESM subpath import, 运行时正常
+      // @ts-ignore — ESM subpath import
       const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
 
       this.client = new Client(
-        { name: 'Iris', version: '1.0.0' },
+        { name: 'Iris', version:'1.0.0' },
         { capabilities: {} },
       );
 
       // 根据传输类型创建 transport
-      if (this.config.transport === 'stdio') {
-        // @ts-ignore — ESM subpath import
-        const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js');
-        this.transport = new StdioClientTransport({
-          command: this.config.command!,
-          args: this.config.args,
-          env: this.config.env ? { ...process.env as Record<string, string>, ...this.config.env } : undefined,
-          cwd: this.config.cwd,
-        });
-      } else {
-        // http 传输：优先使用 StreamableHTTPClientTransport
-        // @ts-ignore — ESM subpath import
-        const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
-        const opts: any = {};
-        if (this.config.headers) {
-          opts.requestInit = { headers: this.config.headers };
-        }
-        this.transport = new StreamableHTTPClientTransport(new URL(this.config.url!), opts);
-      }
+      this.transport = await this.createTransport();
 
-      // 带超时连接（timer 需手动清理防泄漏）
+      // 带超时连接
       const timeout = this.config.timeout ?? 30000;
       let timer: ReturnType<typeof setTimeout>;
       await Promise.race([
@@ -94,7 +80,7 @@ export class MCPClient {
         }),
       ]).finally(() => clearTimeout(timer!));
 
-      // 拉取工具列表（同样带超时）
+      // 拉取工具列表
       let timer2: ReturnType<typeof setTimeout>;
       const result = await Promise.race([
         this.client.listTools(),
@@ -105,17 +91,54 @@ export class MCPClient {
       this._tools = result.tools ?? [];
       this._status = 'connected';
 
-      logger.info(`MCP 服务器 "${this.serverName}" 已连接，工具数: ${this._tools.length}`);
+      logger.info(`MCP 服务器 "${this.serverName}" 已连接 (${this.config.transport})，工具数: ${this._tools.length}`);
     } catch (err: unknown) {
       this._status = 'error';
       this._error = err instanceof Error ? err.message : String(err);
       this._tools = [];
-      // 连接失败时清理（client.close 会关闭 transport 并发送协议关闭通知）
       try { await this.client?.close?.(); } catch { /* ignore */ }
       try { await this.transport?.close?.(); } catch { /* ignore */ }
       this.client = null;
       this.transport = null;
       logger.warn(`MCP 服务器 "${this.serverName}" 连接失败: ${this._error}`);
+    }
+  }
+
+  /**根据配置创建对应的 transport 实例 */
+  private async createTransport(): Promise<any> {
+    switch (this.config.transport) {
+      case 'stdio': {
+        // @ts-ignore — ESM subpath import
+        const { StdioClientTransport } =await import('@modelcontextprotocol/sdk/client/stdio.js');
+        return new StdioClientTransport({
+          command: this.config.command!,
+          args: this.config.args,
+          env: this.config.env
+            ? { ...process.env as Record<string, string>, ...this.config.env }
+            : undefined,
+          cwd: this.config.cwd,
+        });
+      }
+
+      case 'sse': {
+        // @ts-ignore — ESM subpath import
+        const { SSEClientTransport } = await import('@modelcontextprotocol/sdk/client/sse.js');
+        const opts: any = {};
+        if (this.config.headers) {
+          opts.requestInit = { headers: this.config.headers };
+        }
+        return new SSEClientTransport(new URL(this.config.url!), opts);
+      }
+
+      case 'streamable-http': {
+        // @ts-ignore — ESM subpath import
+        const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+     const opts: any = {};
+        if (this.config.headers) {
+          opts.requestInit = { headers: this.config.headers };
+        }
+        return new StreamableHTTPClientTransport(new URL(this.config.url!), opts);
+      }
     }
   }
 
@@ -127,7 +150,6 @@ export class MCPClient {
 
     const result = await this.client.callTool({ name, arguments: args });
 
-    // 检查错误
     if (result.isError) {
       const text = this.extractText(result.content);
       throw new Error(text || `MCP 工具 "${name}" 执行失败`);
@@ -148,7 +170,6 @@ export class MCPClient {
   /** 断开连接 */
   async disconnect(): Promise<void> {
     try {
-      // 优先通过 client 关闭（发送协议关闭通知 + 关闭 transport）
       if (this.client) {
         await this.client.close?.();
       } else if (this.transport) {
@@ -160,7 +181,7 @@ export class MCPClient {
       this.client = null;
       this.transport = null;
       this._tools = [];
-      this._status = 'disconnected';
+   this._status = 'disconnected';
       this._error = undefined;
     }
   }

@@ -54,13 +54,13 @@ export interface MemoryConfig {
 }
 
 export interface MCPServerConfig {
-  transport: 'stdio' | 'http';
+  transport: 'stdio' | 'sse' | 'streamable-http';
   command?: string;        // stdio
   args?: string[];         // stdio
   env?: Record<string, string>;  // stdio
   cwd?: string;            // stdio
-  url?: string;            // http
-  headers?: Record<string, string>;  // http
+  url?: string;            // sse / streamable-http
+  headers?: Record<string, string>;  // sse / streamable-http
   timeout?: number;        // 通用，默认 30000
   enabled?: boolean;       // 通用，默认 true
 }

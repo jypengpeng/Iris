@@ -16,7 +16,7 @@ import { parseSystemConfig } from './system';
 import { parseMemoryConfig } from './memory';
 import { parseMCPConfig } from './mcp';
 
-export type { AppConfig, LLMConfig, TieredLLMConfig, PlatformConfig, StorageConfig, SystemConfig, MemoryConfig, CloudflareConfig, MCPConfig, MCPServerConfig } from './types';
+export type { AppConfig, LLMConfig, TieredLLMConfig, PlatformConfig, StorageConfig, SystemConfig, MemoryConfig, MCPConfig, MCPServerConfig } from './types';
 
 /** 配置文件搜索顺序 */
 const CONFIG_PATHS = [
@@ -36,17 +36,6 @@ export function findConfigFile(): string {
   );
 }
 
-/** 解析可选的 Cloudflare 配置 */
-function parseCloudflareConfig(data: any) {
-  if (!data) return undefined;
-  return {
-    apiToken: typeof data.apiToken === 'string' ? data.apiToken : undefined,
-    apiTokenEnv: typeof data.apiTokenEnv === 'string' ? data.apiTokenEnv : undefined,
-    apiTokenFile: typeof data.apiTokenFile === 'string' ? data.apiTokenFile : undefined,
-    zoneId: data.zoneId || '',
-  };
-}
-
 /** 从 config.yaml 加载配置 */
 export function loadConfig(): AppConfig {
   const configPath = findConfigFile();
@@ -59,7 +48,6 @@ export function loadConfig(): AppConfig {
     storage: parseStorageConfig(data.storage),
     system: parseSystemConfig(data.system),
     memory: parseMemoryConfig(data.memory),
-    cloudflare: parseCloudflareConfig(data.cloudflare),
     mcp: parseMCPConfig(data.mcp),
   };
 }

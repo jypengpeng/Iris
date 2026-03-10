@@ -13,8 +13,6 @@ import { Router } from './router';
 import { createChatHandler } from './handlers/chat';
 import { createSessionsHandlers } from './handlers/sessions';
 import { createConfigHandlers } from './handlers/config';
-import { createDeployHandlers } from './handlers/deploy';
-import { createCloudflareHandlers } from './handlers/cloudflare';
 import { StorageProvider } from '../../storage/base';
 import { ToolRegistry } from '../../tools/registry';
 import { Orchestrator } from '../../core/orchestrator';
@@ -25,8 +23,7 @@ import { DEFAULT_SYSTEM_PROMPT } from '../../prompt/templates/default';
 import { createLogger } from '../../logger';
 import { MCPManager, createMCPManager } from '../../mcp';
 import { sendJSON } from './router';
-import { CloudflareService } from './cloudflare/service';
-import { assertManagementAccess, isManagementRoute } from './security/management';
+import { assertManagementToken } from './security/management';
 
 const logger = createLogger('WebPlatform');
 
@@ -96,7 +93,7 @@ export class WebPlatform extends PlatformAdapter {
         // CORS 支持
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Management-Token, X-Deploy-Token');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Management-Token');
 
         if (req.method === 'OPTIONS') {
           res.writeHead(204);
@@ -118,8 +115,8 @@ export class WebPlatform extends PlatformAdapter {
 
         // 管理面认证：仅对管理接口生效
         const pathname = new URL(url, `http://${req.headers.host ?? 'localhost'}`).pathname;
-        if (isManagementRoute(pathname)) {
-          if (!assertManagementAccess(req, res, this.config.managementToken)) {
+        if (pathname === '/api/config' || pathname.startsWith('/api/config/')) {
+          if (!assertManagementToken(req, res, this.config.managementToken)) {
             return;
           }
         }
@@ -228,7 +225,6 @@ export class WebPlatform extends PlatformAdapter {
 
   private setupRoutes(): void {
     const { storage, tools, configPath } = this.config;
-    const cloudflareService = new CloudflareService(configPath);
 
     // 聊天 API
     this.router.post('/api/chat', createChatHandler(this));
@@ -295,30 +291,6 @@ export class WebPlatform extends PlatformAdapter {
         platform: 'web',
       });
     });
-
-    // 部署管理 API
-    const deploy = createDeployHandlers({
-      host: this.config.host,
-      port: this.config.port,
-      getCloudflareDeployContext: (domain?: string | null) => cloudflareService.getDeployContext(domain),
-      setCloudflareSslMode: (mode, zoneId) => cloudflareService.setSsl(mode, zoneId),
-    });
-    this.router.get('/api/deploy/state', deploy.state);
-    this.router.get('/api/deploy/detect', deploy.detect);
-    this.router.post('/api/deploy/preview', deploy.preview);
-    this.router.post('/api/deploy/sync-cloudflare', deploy.syncCloudflare);
-    this.router.post('/api/deploy/nginx', deploy.nginx);
-    this.router.post('/api/deploy/service', deploy.service);
-
-    // Cloudflare 管理 API
-    const cf = createCloudflareHandlers(cloudflareService);
-    this.router.get('/api/cloudflare/status', cf.status);
-    this.router.get('/api/cloudflare/dns', cf.listDns);
-    this.router.post('/api/cloudflare/dns', cf.addDns);
-    this.router.delete('/api/cloudflare/dns/:id', cf.removeDns);
-    this.router.get('/api/cloudflare/ssl', cf.getSsl);
-    this.router.put('/api/cloudflare/ssl', cf.setSsl);
-    this.router.post('/api/cloudflare/setup', cf.setup);
   }
 
   /** 静态文件服务 */

@@ -1,42 +1,50 @@
 /**
- * Agent 工具 —— 派生子代理执行复杂子任务
+ * 子代理工具
  *
- * 主 LLM 通过此工具创建独立的子 Agent，
- * 每个子 Agent 拥有独立上下文、独立工具集、独立工具循环。
+ * 主 LLM 通过此工具创建独立的子代理，
+ * 每个子代理拥有独立上下文、独立工具集、独立工具循环。
  *
  * 子代理直接复用 ToolLoop（与 Orchestrator/CLI 相同的核心引擎），
- * 支持真正的嵌套自我调用。
+ * 支持嵌套自我调用。
  */
 
-import { ToolDefinition } from '../../types';
-import { LLMRouter } from '../../llm/router';
-import { ToolRegistry } from '../registry';
-import { AgentTypeRegistry } from '../../core/agent-types';
-import { ToolLoop, LLMCaller } from '../../core/tool-loop';
-import { PromptAssembler } from '../../prompt/assembler';
-import { ModeRegistry, applyToolFilter } from '../../modes';
-import { createLogger } from '../../logger';
+import { ToolDefinition } from '../../../types';
+import { LLMRouter } from '../../../llm/router';
+import { ToolRegistry } from '../../registry';
+import { ToolLoop, LLMCaller } from '../../../core/tool-loop';
+import { PromptAssembler } from '../../../prompt/assembler';
+import { createLogger } from '../../../logger';
+import { SubAgentTypeRegistry } from './types';
 
-const logger = createLogger('AgentTool');
+// 统一导出类型层
+export {
+  SubAgentTypeConfig,
+  SubAgentTypeRegistry,
+  createDefaultSubAgentTypes,
+  buildSubAgentGuidance,
+} from './types';
 
-export interface AgentToolDeps {
+const logger = createLogger('SubAgent');
+
+export interface SubAgentToolDeps {
   /** 动态获取 router（支持热重载后取到最新实例） */
   getRouter: () => LLMRouter;
   tools: ToolRegistry;
-  agentTypes: AgentTypeRegistry;
+  subAgentTypes: SubAgentTypeRegistry;
   maxDepth: number;
-  /** 模式注册表（可选） */
-  modeRegistry?: ModeRegistry;
 }
 
+/** 工具名称常量 */
+const TOOL_NAME = 'sub_agent';
+
 /**
- * 创建 agent 工具
+ * 创建 sub_agent 工具
  *
  * @param deps         依赖注入
  * @param currentDepth 当前嵌套深度（0 = 顶层）
  */
-export function createAgentTool(deps: AgentToolDeps, currentDepth: number = 0): ToolDefinition {
-  const typeDescriptions = deps.agentTypes.getAll()
+export function createSubAgentTool(deps: SubAgentToolDeps, currentDepth: number = 0): ToolDefinition {
+  const typeDescriptions = deps.subAgentTypes.getAll()
     .map(t => `  - ${t.name}: ${t.description}`)
     .join('\n');
 
@@ -44,7 +52,7 @@ export function createAgentTool(deps: AgentToolDeps, currentDepth: number = 0): 
 
   return {
     declaration: {
-      name: 'agent',
+      name: TOOL_NAME,
       description: toolDescription,
       parameters: {
         type: 'object',
@@ -53,13 +61,9 @@ export function createAgentTool(deps: AgentToolDeps, currentDepth: number = 0): 
             type: 'string',
             description: '交给子代理执行的任务描述，应尽量详细清晰',
           },
-          agent_type: {
+          type: {
             type: 'string',
             description: '子代理类型（默认 general-purpose）',
-       },
-          mode: {
-            type: 'string',
-            description: '子代理运行模式（可选，影响提示词和可用工具集）',
           },
         },
         required: ['prompt'],
@@ -67,8 +71,7 @@ export function createAgentTool(deps: AgentToolDeps, currentDepth: number = 0): 
     },
     handler: async (args) => {
       const prompt = args.prompt as string;
-      const typeName = (args.agent_type as string) || 'general-purpose';
-      const modeName = args.mode as string | undefined;
+      const typeName = (args.type as string) || 'general-purpose';
 
       // 深度检查
       if (currentDepth >= deps.maxDepth) {
@@ -77,12 +80,12 @@ export function createAgentTool(deps: AgentToolDeps, currentDepth: number = 0): 
       }
 
       // 获取类型配置
-      const typeConfig = deps.agentTypes.get(typeName);
+      const typeConfig = deps.subAgentTypes.get(typeName);
       if (!typeConfig) {
-        return { error: `未知的子代理类型: ${typeName}。可用类型: ${deps.agentTypes.list().join(', ')}` };
+        return { error: `未知的子代理类型: ${typeName}。可用类型: ${deps.subAgentTypes.list().join(', ')}` };
       }
 
-      // 构建子工具集（根据 AgentType 配置过滤）
+      // 构建子工具集
       let subTools: ToolRegistry;
       if (typeConfig.allowedTools) {
         subTools = deps.tools.createSubset(typeConfig.allowedTools);
@@ -92,33 +95,19 @@ export function createAgentTool(deps: AgentToolDeps, currentDepth: number = 0): 
         subTools = deps.tools.createFiltered([]);
       }
 
-      // 叠加模式过滤
-      let subSystemPrompt = typeConfig.systemPrompt;
-      if (modeName && deps.modeRegistry) {
-        const modeConfig = deps.modeRegistry.get(modeName);
-        if (modeConfig) {
-          subTools = applyToolFilter(modeConfig, subTools);
-          if (modeConfig.systemPrompt) {
-            subSystemPrompt = modeConfig.systemPrompt + '\n\n' + subSystemPrompt;
-          }
-        } else {
-          logger.warn(`子代理指定的模式 "${modeName}" 未找到，忽略`);
-        }
-      }
-
-      // 注入深度递增的 agent 工具（实现真正的嵌套自我调用）
+      // 注入深度递增的 sub_agent 工具（实现嵌套自我调用）
       if (currentDepth + 1 < deps.maxDepth) {
-        subTools.unregister('agent');
-        subTools.register(createAgentTool(deps, currentDepth + 1));
-      }else {
-        subTools.unregister('agent');
+        subTools.unregister(TOOL_NAME);
+        subTools.register(createSubAgentTool(deps, currentDepth + 1));
+      } else {
+        subTools.unregister(TOOL_NAME);
       }
 
-      logger.info(`创建子代理: type=${typeName} mode=${modeName ?? 'none'} depth=${currentDepth + 1}/${deps.maxDepth} 工具数=${subTools.size}`);
+      logger.info(`创建子代理: type=${typeName} depth=${currentDepth + 1}/${deps.maxDepth} 工具数=${subTools.size}`);
 
       // 创建 ToolLoop（与 Orchestrator 复用同一引擎）
       const subPrompt = new PromptAssembler();
-      subPrompt.setSystemPrompt(subSystemPrompt);
+      subPrompt.setSystemPrompt(typeConfig.systemPrompt);
 
       const loop = new ToolLoop(subTools, subPrompt, {
         maxRounds: typeConfig.maxToolRounds,

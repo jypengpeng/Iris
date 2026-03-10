@@ -1,19 +1,19 @@
 /**
- * 子 Agent 类型定义与注册表
+ * 子代理类型定义与注册表
  *
- * 定义可用的子 Agent 类型（系统提示词、工具白/黑名单、LLM 层级等），
- * 主 LLM 通过 agent 工具按类型派生子 Agent。
+ * 定义可用的子代理类型（系统提示词、工具白/黑名单、LLM 层级等），
+ * 主 LLM 通过 sub_agent 工具按类型派生子代理。
  */
 
-import { LLMTier } from '../llm/router';
+import { LLMTier } from '../../../llm/router';
 
-/** 子 Agent 类型配置 */
-export interface AgentTypeConfig {
+/** 子代理类型配置 */
+export interface SubAgentTypeConfig {
   /** 类型标识 */
   name: string;
-  /** 面向父级 LLM 的用途说明（展示在 agent 工具声明中） */
+  /** 面向父级 LLM 的用途说明（展示在 sub_agent 工具声明中） */
   description: string;
-  /** 子 Agent 的系统提示词 */
+  /** 子代理的系统提示词 */
   systemPrompt: string;
   /** 工具白名单（与 excludedTools 互斥，优先） */
   allowedTools?: string[];
@@ -25,17 +25,17 @@ export interface AgentTypeConfig {
   maxToolRounds: number;
 }
 
-/** 子 Agent 类型注册表 */
-export class AgentTypeRegistry {
-  private types = new Map<string, AgentTypeConfig>();
+/** 子代理类型注册表 */
+export class SubAgentTypeRegistry {
+  private types = new Map<string, SubAgentTypeConfig>();
 
-  /** 注册 Agent 类型 */
-  register(config: AgentTypeConfig): void {
+  /** 注册子代理类型 */
+  register(config: SubAgentTypeConfig): void {
     this.types.set(config.name, config);
   }
 
-  /** 获取 Agent 类型配置 */
-  get(name: string): AgentTypeConfig | undefined {
+  /** 获取子代理类型配置 */
+  get(name: string): SubAgentTypeConfig | undefined {
     return this.types.get(name);
   }
 
@@ -45,19 +45,19 @@ export class AgentTypeRegistry {
   }
 
   /** 获取所有已注册的类型配置 */
-  getAll(): AgentTypeConfig[] {
+  getAll(): SubAgentTypeConfig[] {
     return Array.from(this.types.values());
   }
 }
 
-/** 创建内置默认 Agent 类型 */
-export function createDefaultAgentTypes(): AgentTypeConfig[] {
+/** 创建内置默认子代理类型 */
+export function createDefaultSubAgentTypes(): SubAgentTypeConfig[] {
   return [
     {
       name: 'general-purpose',
       description: '执行需要多步工具操作的复杂子任务。适合将独立的子任务委派出去并行处理。',
       systemPrompt: '你是一个通用子代理，负责独立完成委派给你的子任务。请专注于完成任务并返回清晰的结果。',
-      excludedTools: ['agent'],
+      excludedTools: ['sub_agent'],
       tier: 'secondary',
       maxToolRounds: 10,
     },
@@ -81,12 +81,12 @@ export function createDefaultAgentTypes(): AgentTypeConfig[] {
 }
 
 /** 根据注册的类型动态生成协调指导文本，注入系统提示词引导主 LLM 自然委派 */
-export function buildAgentGuidance(registry: AgentTypeRegistry, hasMemory: boolean): string {
+export function buildSubAgentGuidance(registry: SubAgentTypeRegistry, hasMemory: boolean): string {
   const typeList = registry.getAll()
     .map(t => `- **${t.name}**：${t.description}`)
     .join('\n');
 
-  let guidance = `\n## 任务委派\n\n你可以使用 agent 工具将子任务委派给专门的子代理。每个子代理拥有独立的上下文和工具，完成后返回结果。\n\n可用的子代理类型：\n${typeList}\n\n使用原则：\n- 简单问题直接回答，不需要子代理\n- 当子任务相对独立时，优先委派给子代理\n- 可以同时派出多个子代理并行处理不同的子任务`;
+  let guidance = `\n## 任务委派\n\n你可以使用 sub_agent 工具将子任务委派给专门的子代理。每个子代理拥有独立的上下文和工具，完成后返回结果。\n\n可用的子代理类型：\n${typeList}\n\n使用原则：\n- 简单问题直接回答，不需要子代理\n- 当子任务相对独立时，优先委派给子代理\n- 可以同时派出多个子代理并行处理不同的子任务`;
 
   if (hasMemory) {
     guidance += `\n- 需要检索长期记忆时，使用 recall 子代理\n- memory_add 和 memory_delete 请直接使用，不要委派`;

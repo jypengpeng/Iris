@@ -29,15 +29,15 @@ import { createMCPManager, MCPManager } from './mcp';
 // 工具
 import { ToolRegistry } from './tools/registry';
 import { ToolStateManager } from './tools/state';
-import { getCurrentTime, calculator } from './tools/builtin/example';
-import { readFile } from './tools/builtin/read-file';
-import { searchReplace } from './tools/builtin/search-replace';
-import { terminal } from './tools/builtin/terminal';
-import { applyDiff } from './tools/builtin/apply-diff';
-import { createAgentTool } from './tools/builtin/agent';
+import { getCurrentTime, calculator } from './tools/internal/example';
+import { readFile } from './tools/internal/read-file';
+import { searchReplace } from './tools/internal/search-replace';
+import { terminal } from './tools/internal/terminal';
+import { applyDiff } from './tools/internal/apply-diff';
 
-// 子 Agent
-import { AgentTypeRegistry, createDefaultAgentTypes, buildAgentGuidance } from './core/agent-types';
+// 子代理
+import { SubAgentTypeRegistry, createDefaultSubAgentTypes, buildSubAgentGuidance, createSubAgentTool } from './tools/internal/sub-agent';
+
 
 // 模式
 import { ModeRegistry } from './modes';
@@ -90,11 +90,11 @@ async function main() {
   }
 
   // ---- 3.5 注册子 Agent 工具 ----
-  const agentTypes = new AgentTypeRegistry();
-  for (const t of createDefaultAgentTypes()) {
+  const subAgentTypes = new SubAgentTypeRegistry();
+  for (const t of createDefaultSubAgentTypes()) {
     // recall 类型仅在记忆模块启用时注册
     if (t.name === 'recall' && !memory) continue;
-    agentTypes.register(t);
+    subAgentTypes.register(t);
   }
 
   // ---- 3.5 注册用户自定义模式 ----
@@ -109,16 +109,15 @@ async function main() {
 
   // ---- 3.5a. 创建工具状态管理器 ----
   const toolState = new ToolStateManager();
-  tools.register(createAgentTool({
+  tools.register(createSubAgentTool({
     getRouter: () => orchestrator.getRouter(),
     tools,
-    agentTypes,
+    subAgentTypes,
     maxDepth: config.system.maxAgentDepth,
-    modeRegistry,
   }));
 
-  // ---- 3.6 构建 Agent 协调指导 ----
-  const agentGuidance = buildAgentGuidance(agentTypes, !!memory);
+  // ---- 3.6 构建子代理协调指导 ----
+  const agentGuidance = buildSubAgentGuidance(subAgentTypes, !!memory);
 
 
   // ---- 4. 创建平台适配器 ----

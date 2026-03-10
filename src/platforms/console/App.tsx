@@ -202,7 +202,7 @@ export function App({ onReady, onSubmit, onExit }: AppProps) {
             return (
               <Box key={item.id} marginBottom={1}>
                 <Gradient name="atlas">
-                  <Text bold italic>IRIS AI SYSTEM v2.0 // CONTROL_UNIT_01</Text>
+                  <Text bold italic>IRIS</Text>
                 </Gradient>
               </Box>
             );

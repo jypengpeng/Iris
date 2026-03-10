@@ -8,6 +8,7 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { PlatformAdapter } from '../base';
 import { Backend } from '../../core/backend';
 import { Router, sendJSON } from './router';
@@ -53,6 +54,25 @@ const MIME_TYPES: Record<string, string> = {
   '.wasm': 'application/wasm',
 };
 
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+function resolvePublicDir(): string {
+  const candidates = [
+    path.join(MODULE_DIR, 'web-ui/dist'),
+    path.resolve(process.cwd(), 'src/platforms/web/web-ui/dist'),
+    path.resolve(process.cwd(), 'dist/platforms/web/web-ui/dist'),
+    path.join(MODULE_DIR, 'public'),
+    path.resolve(process.cwd(), 'src/platforms/web/public'),
+    path.resolve(process.cwd(), 'dist/platforms/web/public'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  return candidates[0];
+}
+
 export class WebPlatform extends PlatformAdapter {
   private server?: http.Server;
   private router: Router;
@@ -71,9 +91,7 @@ export class WebPlatform extends PlatformAdapter {
     this.backend = backend;
     this.config = config;
     this.router = new Router();
-    const vueDist = path.join(__dirname, 'web-ui/dist');
-    const legacyPublic = path.join(__dirname, 'public');
-    this.publicDir = fs.existsSync(vueDist) ? vueDist : legacyPublic;
+    this.publicDir = resolvePublicDir();
     this.setupRoutes();
   }
 

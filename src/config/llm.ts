@@ -20,6 +20,11 @@ export const DEFAULTS: Record<string, Partial<LLMConfig> & { contextWindow?: num
     baseUrl: 'https://api.anthropic.com',
     contextWindow: 200000,
   },
+  'openai-responses': {
+    model: 'gpt-4o',
+    baseUrl: 'https://api.openai.com',
+    contextWindow: 128000,
+  },
 };
 
 /** 解析单个 LLM 提供商配置 */

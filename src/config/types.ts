@@ -3,7 +3,7 @@
  */
 
 export interface LLMConfig {
-  provider: 'gemini' | 'openai-compatible' | 'claude';
+  provider: 'gemini' | 'openai-compatible' | 'claude' | 'openai-responses';
   apiKey: string;
   model: string;
   baseUrl: string;

@@ -43,6 +43,13 @@ export class ClaudeFormat implements FormatAdapter {
           if (part.text) contentBlocks.push({ type: 'text', text: part.text });
         }
 
+        // 思考部分 (Claude 3.7 Thinking)
+        const thoughtPart = content.parts.find(p => (p as any).thought && (p as any).thoughtSignatures?.claude);
+        if (thoughtPart) {
+          const sig = (thoughtPart as any).thoughtSignatures.claude;
+          contentBlocks.push({ type: 'thought', thought: sig });
+        }
+
         // 工具调用部分
         for (const part of funcCallParts) {
           if (!isFunctionCallPart(part)) continue;
@@ -122,6 +129,11 @@ export class ClaudeFormat implements FormatAdapter {
           parts.push({
             functionCall: { name: block.name, args: block.input },
           });
+        } else if (block.type === 'thought') {
+          parts.push({
+            thought: true,
+            thoughtSignatures: { claude: block.thought }
+          });
         }
       }
     }
@@ -164,6 +176,13 @@ export class ClaudeFormat implements FormatAdapter {
       case 'content_block_delta':
         if (data.delta?.type === 'text_delta') {
           chunk.textDelta = data.delta.text;
+        } else if (data.delta?.type === 'thought_delta') {
+          chunk.partsDelta = [{
+            thought: true,
+            thoughtSignatures: { claude: data.delta.thought }
+          } as any];
+          if (!chunk.thoughtSignatures) chunk.thoughtSignatures = {};
+          chunk.thoughtSignatures.claude = data.delta.thought;
         } else if (data.delta?.type === 'input_json_delta') {
           if (st.currentToolUse) {
             st.currentToolUse.arguments += data.delta.partial_json;

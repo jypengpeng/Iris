@@ -37,74 +37,54 @@ export class OpenAIResponsesFormat implements FormatAdapter {
 
     for (const content of request.contents) {
       if (content.role === 'model') {
-        const item: Record<string, any> = {
-          role: 'assistant',
-          content: []
-        };
+        let currentMessageItem: any = null;
 
-        // 提取思考签名 (encrypted_content)
-        // 注意：OpenAI Responses API 中，签名是独立的 item 或者是 message 之前的上下文
-        const signaturePart = content.parts.find(p => (p as any).thoughtSignatures?.openai);
-        if (signaturePart && (signaturePart as any).thoughtSignatures.openai) {
-          inputItems.push({
-            type: 'reasoning',
-            encrypted_content: (signaturePart as any).thoughtSignatures.openai
-          });
-        }
-
-        // 提取思考文本 (summary)
-        const thoughtParts = content.parts.filter(p => (p as any).thought === true);
-        if (thoughtParts.length > 0) {
-          inputItems.push({
-            type: 'reasoning',
-            summary: thoughtParts.map(p => ({
-              type: 'summary_text',
-              text: (p as any).text
-            }))
-          });
-        }
-
-        // 提取普通文本和工具调用
         for (const part of content.parts) {
-          if (isVisibleTextPart(part) && part.text) {
-            item.content.push({ type: 'output_text', text: part.text });
-          }
-          if (isFunctionCallPart(part)) {
-            // 注意：Responses API 中 function_call 是独立的 item
+          if (isTextPart(part) && part.thought === true) {
+            // 思考块 -> reasoning item
+            const reasoningItem: any = { type: 'reasoning' };
+            if (part.text) {
+              reasoningItem.summary = [{ type: 'summary_text', text: part.text }];
+            }
+            if (part.thoughtSignatures?.openai) {
+              reasoningItem.encrypted_content = part.thoughtSignatures.openai;
+            }
+            inputItems.push(reasoningItem);
+            currentMessageItem = null; // 切换类型，重置当前消息项
+          } else if (isVisibleTextPart(part) && part.text) {
+            // 普通文本 -> message item 的 content
+            if (!currentMessageItem) {
+              currentMessageItem = { type: 'message', role: 'assistant', content: [] };
+              inputItems.push(currentMessageItem);
+            }
+            currentMessageItem.content.push({ type: 'output_text', text: part.text });
+          } else if (isFunctionCallPart(part)) {
+            // 工具调用 -> function_call item
             inputItems.push({
               id: `call_${toolUseIdCounter++}`,
               type: 'function_call',
               name: part.functionCall.name,
               arguments: JSON.stringify(part.functionCall.args)
             });
+            currentMessageItem = null;
           }
         }
-
-        if (item.content.length > 0) {
-          inputItems.push({
-            type: 'message',
-            role: 'assistant',
-            content: item.content
-          });
-        }
       } else {
-        // user role
+        // user / tool role
         const funcRespParts = content.parts.filter(isFunctionResponsePart);
         if (funcRespParts.length > 0) {
           for (const part of funcRespParts) {
             if (!isFunctionResponsePart(part)) continue;
             inputItems.push({
-              type: 'function_call_output',
-              // 这里的 ID 匹配比较复杂，通常由 Backend 维护，简单起见我们按序匹配
               call_id: `call_${toolUseIdCounter - funcRespParts.length + inputItems.filter(i => i.type === 'function_call_output').length}`,
               output: JSON.stringify(part.functionResponse.response)
             });
           }
         } else {
-          const text = content.parts.filter(isTextPart).map(p => p.text).join('');
+          const text = content.parts.filter(isTextPart).map(p => p.text || '').join('');
           inputItems.push({
             role: 'user',
-            content: [{ type: 'input_text', text }]
+            content: [{ type: 'input_text', text: text || ' ' }]
           });
         }
       }

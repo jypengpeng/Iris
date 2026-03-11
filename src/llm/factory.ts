@@ -9,6 +9,7 @@ import { LLMProvider } from './providers/base';
 import { createGeminiProvider } from './providers/gemini';
 import { createOpenAICompatibleProvider } from './providers/openai-compatible';
 import { createClaudeProvider } from './providers/claude';
+import { createOpenAIResponsesProvider } from './providers/openai-responses';
 import { LLMRouter } from './router';
 import { LLMConfig, TieredLLMConfig } from '../config/types';
 
@@ -24,6 +25,14 @@ export function createLLMFromConfig(config: LLMConfig): LLMProvider {
       });
     case 'claude':
       return createClaudeProvider({
+        apiKey: config.apiKey,
+        model: config.model,
+        baseUrl: config.baseUrl,
+        headers: config.headers,
+        requestBody: config.requestBody,
+      });
+    case 'openai-responses':
+      return createOpenAIResponsesProvider({
         apiKey: config.apiKey,
         model: config.model,
         baseUrl: config.baseUrl,

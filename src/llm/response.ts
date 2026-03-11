@@ -35,24 +35,33 @@ export async function* processStreamResponse(
     throw new Error(`LLM API 流式错误 (${res.status}): ${text}`);
   }
  const state = format.createStreamState();
-  for await (const data of parseSSE(res)) {
-    yield format.decodeStreamChunk(JSON.parse(data), state);
+  for await (const sse of parseSSE(res)) {
+    const payload = JSON.parse(sse.data);
+    // 注入事件名，以便 FormatAdapter 区分
+    if (sse.event) (payload as any).event = sse.event;
+    yield format.decodeStreamChunk(payload, state);
   }
 }
 
 // ============ SSE 解析 ============
 
+export interface SSEChunk {
+  event?: string;
+  data: string;
+}
+
 /**
- * 从 fetch Response 中解析 SSE 流，逐条 yield data 字段的原始字符串。
+ * 从 fetch Response 中解析 SSE 流，逐条 yield 包含 data 字段的原始字符串的对象。
  * 遇到 `data: [DONE]` 时自动结束。
  */
-async function* parseSSE(response: Response): AsyncGenerator<string> {
+async function* parseSSE(response: Response): AsyncGenerator<SSEChunk> {
   const body = response.body;
   if (!body) throw new Error('Response body is null');
 
   const reader = (body as any).getReader() as ReadableStreamDefaultReader<Uint8Array>;
   const decoder = new TextDecoder();
   let buffer = '';
+  let currentEvent: string | undefined;
 
   try {
     while (true) {
@@ -66,19 +75,27 @@ async function* parseSSE(response: Response): AsyncGenerator<string> {
 
       for (const line of lines) {
         const trimmed = line.trim();
-        if (trimmed.startsWith('data: ')) {
+        if (trimmed.startsWith('event: ')) {
+          currentEvent = trimmed.slice(7).trim();
+        } else if (trimmed.startsWith('data: ')) {
           const data = trimmed.slice(6);
           if (data === '[DONE]') return;
-          if (data) yield data;
+          if (data) {
+            yield { event: currentEvent, data };
+            currentEvent = undefined; // data 是事件序列的结尾
+          }
+        } else if (trimmed === '') {
+          currentEvent = undefined; // 空行重置事件
         }
       }
     }
-
     // 处理剩余 buffer
     const trimmed = buffer.trim();
     if (trimmed.startsWith('data: ')) {
       const data = trimmed.slice(6);
-      if (data && data !== '[DONE]') yield data;
+      if (data && data !== '[DONE]') {
+        yield { event: currentEvent, data };
+      }
     }
   } finally {
     reader.releaseLock();

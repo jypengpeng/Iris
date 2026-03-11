@@ -1,149 +1,175 @@
 /**
  * OpenAI Responses 格式适配器
  * 
- * 专门处理带思考过程（reasoning_content）的 OpenAI 格式模型。
- * 将思考正文映射到 Part { text: ..., thought: true }。
+ * 专门处理 /v1/responses 接口。
+ * 支持 reasoning summary 存储为 thought parts，
+ * 支持 encrypted_content 存储为 thoughtSignatures.openai 并回传。
  */
 
 import {
   LLMRequest, LLMResponse, LLMStreamChunk, Part,
-  isVisibleTextPart, isFunctionCallPart, isFunctionResponsePart,
+  isVisibleTextPart, isFunctionCallPart, isFunctionResponsePart, isTextPart,
 } from '../../types';
 import { FormatAdapter, StreamDecodeState } from './types';
-import { OpenAICompatibleFormat } from './openai-compatible';
 
-export class OpenAIResponsesFormat extends OpenAICompatibleFormat {
-  constructor(model: string) {
-    super(model);
-  }
+export class OpenAIResponsesFormat implements FormatAdapter {
+  constructor(private model: string) {}
 
-  // ============ 编码请求：Gemini → OpenAI ============
+  // ============ 编码请求：Gemini (Internal) → OpenAI Responses ============
 
   encodeRequest(request: LLMRequest, stream?: boolean): unknown {
-    const messages: Record<string, unknown>[] = [];
+    const body: Record<string, any> = {
+      model: this.model,
+      store: false, // 强制 stateless 以支持 encrypted_content 回传
+    };
 
-    // systemInstruction
+    // 1. systemInstruction -> instructions
     if (request.systemInstruction?.parts) {
-      const text = request.systemInstruction.parts
-        .filter(isVisibleTextPart).map(p => p.text).join('\n');
-      if (text) messages.push({ role: 'system', content: text });
+      body.instructions = request.systemInstruction.parts
+        .filter(isVisibleTextPart)
+        .map(p => p.text)
+        .join('\n');
     }
 
-    // contents
-    let pendingCallId = 0;
+    // 2. contents -> input
+    const inputItems: any[] = [];
+    let toolUseIdCounter = 0;
+
     for (const content of request.contents) {
       if (content.role === 'model') {
-        const msg: Record<string, any> = { role: 'assistant' };
-        
-        // 分离思考内容和正文内容
-        const thoughtParts = content.parts.filter(p => (p as any).thought === true);
-        const textParts = content.parts.filter(isVisibleTextPart);
-        const funcCallParts = content.parts.filter(isFunctionCallPart);
-        
-        const reasoning = thoughtParts.map(p => (p as any).text).join('');
-        if (reasoning) msg.reasoning_content = reasoning;
-        
-        const text = textParts.map(p => (p as any).text).join('');
-        if (text) msg.content = text;
-        
-        // 映射签名 (如果存在)
-        const signaturePart = content.parts.find(p => (p as any).thoughtSignatures?.openai);
-        if (signaturePart) {
-          // 这里可以根据需要映射到特定的 OpenAI 扩展字段，目前标准 API 暂无
-        }
+        const item: Record<string, any> = {
+          role: 'assistant',
+          content: []
+        };
 
-        if (funcCallParts.length > 0) {
-          msg.tool_calls = funcCallParts.map((part, i) => {
-            if (!isFunctionCallPart(part)) throw new Error('unreachable');
-            return {
-              id: `call_${pendingCallId + i}`,
-              type: 'function',
-              function: {
-                name: part.functionCall.name,
-                arguments: JSON.stringify(part.functionCall.args),
-              },
-            };
+        // 提取思考签名 (encrypted_content)
+        // 注意：OpenAI Responses API 中，签名是独立的 item 或者是 message 之前的上下文
+        const signaturePart = content.parts.find(p => (p as any).thoughtSignatures?.openai);
+        if (signaturePart && (signaturePart as any).thoughtSignatures.openai) {
+          inputItems.push({
+            type: 'reasoning',
+            encrypted_content: (signaturePart as any).thoughtSignatures.openai
           });
         }
-        
-        messages.push(msg);
-      } else {
-        // User role
-        const funcRespParts = content.parts.filter(isFunctionResponsePart);
-        if (funcRespParts.length > 0) {
-          for (let i = 0; i < funcRespParts.length; i++) {
-            const part = funcRespParts[i];
-            if (!isFunctionResponsePart(part)) continue;
-            messages.push({
-              role: 'tool',
-              tool_call_id: `call_${pendingCallId + i}`,
-              content: JSON.stringify(part.functionResponse.response),
+
+        // 提取思考文本 (summary)
+        const thoughtParts = content.parts.filter(p => (p as any).thought === true);
+        if (thoughtParts.length > 0) {
+          inputItems.push({
+            type: 'reasoning',
+            summary: thoughtParts.map(p => ({
+              type: 'summary_text',
+              text: (p as any).text
+            }))
+          });
+        }
+
+        // 提取普通文本和工具调用
+        for (const part of content.parts) {
+          if (isVisibleTextPart(part) && part.text) {
+            item.content.push({ type: 'output_text', text: part.text });
+          }
+          if (isFunctionCallPart(part)) {
+            // 注意：Responses API 中 function_call 是独立的 item
+            inputItems.push({
+              id: `call_${toolUseIdCounter++}`,
+              type: 'function_call',
+              name: part.functionCall.name,
+              arguments: JSON.stringify(part.functionCall.args)
             });
           }
-          pendingCallId += funcRespParts.length;
+        }
+
+        if (item.content.length > 0) {
+          inputItems.push({
+            type: 'message',
+            role: 'assistant',
+            content: item.content
+          });
+        }
+      } else {
+        // user role
+        const funcRespParts = content.parts.filter(isFunctionResponsePart);
+        if (funcRespParts.length > 0) {
+          for (const part of funcRespParts) {
+            if (!isFunctionResponsePart(part)) continue;
+            inputItems.push({
+              type: 'function_call_output',
+              // 这里的 ID 匹配比较复杂，通常由 Backend 维护，简单起见我们按序匹配
+              call_id: `call_${toolUseIdCounter - funcRespParts.length + inputItems.filter(i => i.type === 'function_call_output').length}`,
+              output: JSON.stringify(part.functionResponse.response)
+            });
+          }
         } else {
-          const text = content.parts.filter(p => 'text' in p).map(p => (p as any).text).join('');
-          messages.push({ role: 'user', content: text });
+          const text = content.parts.filter(isTextPart).map(p => p.text).join('');
+          inputItems.push({
+            role: 'user',
+            content: [{ type: 'input_text', text }]
+          });
         }
       }
     }
 
-    const body: Record<string, any> = {
-      model: (this as any).model,
-      messages,
-    };
+    body.input = inputItems;
 
+    // 3. tools
     if (request.tools && request.tools.length > 0) {
       body.tools = request.tools.flatMap(t => t.functionDeclarations).map(decl => ({
         type: 'function',
-        function: { name: decl.name, description: decl.description, parameters: decl.parameters },
+        name: decl.name,
+        description: decl.description,
+        parameters: decl.parameters
       }));
     }
-    
+
+    // 4. generationConfig
     if (request.generationConfig) {
       const gc = request.generationConfig;
+      if (gc.maxOutputTokens !== undefined) body.max_output_tokens = gc.maxOutputTokens;
       if (gc.temperature !== undefined) body.temperature = gc.temperature;
       if (gc.topP !== undefined) body.top_p = gc.topP;
-      if (gc.maxOutputTokens !== undefined) body.max_tokens = gc.maxOutputTokens;
+      // 启用推理签名回传声明
+      body.contains = ["reasoning.encrypted_content"];
     }
 
-    if (stream) {
-      body.stream = true;
-      body.stream_options = { include_usage: true };
-    }
+    if (stream) body.stream = true;
 
     return body;
   }
 
-  // ============ 解码响应：OpenAI → Gemini ============
+  // ============ 解码响应：OpenAI Responses → Gemini (Internal) ============
 
   decodeResponse(raw: unknown): LLMResponse {
     const data = raw as any;
-    const choice = data.choices?.[0];
-    if (!choice?.message) return super.decodeResponse(raw);
+    if (!data.output) {
+      throw new Error(`OpenAI Responses API 未返回有效内容: ${JSON.stringify(data)}`);
+    }
 
-    const msg = choice.message;
     const parts: Part[] = [];
-
-    // 1. 思考过程 -> 存入 Part.text (thought: true)
-    const reasoning = msg.reasoning_content || msg.reasoning || msg.thinking;
-    if (reasoning) {
-      parts.push({
-        text: reasoning,
-        thought: true
-      } as any);
-    }
-
-    // 2. 正文内容
-    if (msg.content) {
-      parts.push({ text: msg.content });
-    }
-
-    // 3. 工具调用
-    if (msg.tool_calls) {
-      for (const tc of msg.tool_calls) {
+    for (const item of data.output) {
+      if (item.type === 'reasoning') {
+        const part: any = { thought: true };
+        // 提取摘要文本
+        if (item.summary) {
+          part.text = item.summary.map((s: any) => s.text).join('\n');
+        }
+        // 提取加密签名
+        if (item.encrypted_content) {
+          part.thoughtSignatures = { openai: item.encrypted_content };
+        }
+        parts.push(part);
+      } else if (item.type === 'message') {
+        for (const block of item.content) {
+          if (block.type === 'output_text') {
+            parts.push({ text: block.text });
+          }
+        }
+      } else if (item.type === 'function_call') {
         parts.push({
-          functionCall: { name: tc.function.name, args: JSON.parse(tc.function.arguments) },
+          functionCall: { 
+            name: item.name, 
+            args: typeof item.arguments === 'string' ? JSON.parse(item.arguments) : item.arguments 
+          }
         });
       }
     }
@@ -152,10 +178,9 @@ export class OpenAIResponsesFormat extends OpenAICompatibleFormat {
 
     return {
       content: { role: 'model', parts },
-      finishReason: choice.finish_reason,
       usageMetadata: data.usage ? {
-        promptTokenCount: data.usage.prompt_tokens,
-        candidatesTokenCount: data.usage.completion_tokens,
+        promptTokenCount: data.usage.input_tokens,
+        candidatesTokenCount: data.usage.output_tokens,
         totalTokenCount: data.usage.total_tokens,
       } : undefined,
     };
@@ -165,34 +190,48 @@ export class OpenAIResponsesFormat extends OpenAICompatibleFormat {
 
   decodeStreamChunk(raw: unknown, state: StreamDecodeState): LLMStreamChunk {
     const data = raw as any;
-    const choice = data.choices?.[0];
     const chunk: LLMStreamChunk = {};
 
-    if (!choice?.delta) return super.decodeStreamChunk(raw, state);
+    // OpenAI Responses SSE 包含多种事件：response.output_text.delta, response.output_item.added 等
+    // 这里的 data.type 是 SSE 的事件名，但在 JSON parse 之后通常是 chunk 内容
+    // 假设传输层已经将 SSE 事件分发为 JSON 块
+    
+    const event = data.event || data.type; // 取决于 transport 层如何透传
 
-    const delta = choice.delta;
-    const reasoning = delta.reasoning_content || delta.reasoning || delta.thinking;
-
-    // 1. 处理思考正文 (DeepSeek / OpenAI o1 / o3)
-    if (reasoning) {
-      chunk.partsDelta = [{
-        text: reasoning,
-        thought: true
-      } as any];
+    if (event === 'response.output_text.delta') {
+      chunk.textDelta = data.delta;
+      chunk.partsDelta = [{ text: data.delta }];
+    } else if (event === 'response.output_item.added') {
+      const item = data.item;
+      if (item.type === 'reasoning') {
+        const part: any = { thought: true };
+        if (item.summary) part.text = item.summary.map((s: any) => s.text).join('\n');
+        if (item.encrypted_content) {
+          part.thoughtSignatures = { openai: item.encrypted_content };
+          chunk.thoughtSignatures = { openai: item.encrypted_content };
+        }
+        chunk.partsDelta = [part];
+      }
+    } else if (event === 'response.output_item.done') {
+        // Item 完成时的最终数据
+        const item = data.item;
+        if (item.type === 'reasoning' && item.encrypted_content) {
+            chunk.thoughtSignatures = { openai: item.encrypted_content };
+        }
+    } else if (event === 'response.completed') {
+      if (data.usage) {
+        chunk.usageMetadata = {
+          promptTokenCount: data.usage.input_tokens,
+          candidatesTokenCount: data.usage.output_tokens,
+          totalTokenCount: data.usage.total_tokens,
+        };
+      }
     }
-
-    // 2. 处理普通正文
-    if (delta.content) {
-      chunk.textDelta = delta.content;
-      if (!chunk.partsDelta) chunk.partsDelta = [];
-      chunk.partsDelta.push({ text: delta.content });
-    }
-
-    const baseChunk = super.decodeStreamChunk(raw, state);
-    if (baseChunk.finishReason) chunk.finishReason = baseChunk.finishReason;
-    if (baseChunk.usageMetadata) chunk.usageMetadata = baseChunk.usageMetadata;
-    if (baseChunk.functionCalls) chunk.functionCalls = baseChunk.functionCalls;
 
     return chunk;
+  }
+
+  createStreamState(): StreamDecodeState {
+    return {};
   }
 }

@@ -29,12 +29,23 @@ export interface Message {
   parts: MessagePart[]
 }
 
+/** 会话摘要 */
+export interface SessionSummary {
+  id: string
+  title: string
+  cwd?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
 /** 系统状态 */
 export interface StatusInfo {
   provider: string
   model: string
   tools: string[]
   stream: boolean
+  authProtected?: boolean
+  managementProtected?: boolean
   platform: string
 }
 

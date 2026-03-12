@@ -51,10 +51,11 @@ function normalizeDocuments(documents?: DocumentInput[]): DocumentInput[] {
   }))
 }
 
-function buildUserMessageParts(text: string, images?: ImageInput[], documents?: DocumentInput[]): MessagePart[] {
+/** 构建用户消息 parts。接收已 normalize 的数组，不再重复复制。 */
+function buildUserMessageParts(text: string, images: ImageInput[], documents: DocumentInput[]): MessagePart[] {
   const parts: MessagePart[] = []
 
-  for (const image of normalizeImages(images)) {
+  for (const image of images) {
     parts.push({
       type: 'image',
       mimeType: image.mimeType,
@@ -62,7 +63,7 @@ function buildUserMessageParts(text: string, images?: ImageInput[], documents?: 
     })
   }
 
-  for (const doc of normalizeDocuments(documents)) {
+  for (const doc of documents) {
     parts.push({
       type: 'document',
       fileName: doc.fileName,
@@ -211,18 +212,23 @@ export function useChat() {
     }, normalizedImages, normalizedDocs)
   }
 
-  /** 重试：截断后端历史，移除前端消息，重新发送 */
-  async function retryLastMessage() {
+  /** 重试指定消息所属轮次；未传索引时退化为重试最后一轮 */
+  async function retryLastMessage(messageIndex?: number) {
     if (sending.value) return
 
-    // 从后往前找最后一条用户消息
+    const anchorIndex = typeof messageIndex === 'number'
+      ? Math.min(Math.max(messageIndex, 0), messages.value.length - 1)
+      : messages.value.length - 1
+
+    // 从指定锚点向前找最近一条用户消息
     let lastUserIdx = -1
-    for (let i = messages.value.length - 1; i >= 0; i--) {
+    for (let i = anchorIndex; i >= 0; i--) {
       if (messages.value[i].role === 'user') {
         lastUserIdx = i
         break
       }
     }
+
     if (lastUserIdx < 0) return
 
     const userMsg = messages.value[lastUserIdx]

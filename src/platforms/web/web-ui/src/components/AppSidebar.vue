@@ -43,21 +43,22 @@
 
         <div class="session-items" v-else>
           <div
+            v-for="session in sessions"
+            :key="session.id"
             class="session-item"
-            :class="{ active: id === currentSessionId }"
-            v-for="id in sessions"
-            :key="id"
+            :class="{ active: session.id === currentSessionId }"
           >
-            <button class="session-button" type="button" @click="handleSwitchSession(id)">
-              <span class="session-caption">Session</span>
-              <span class="session-name">{{ id }}</span>
+            <button class="session-button" type="button" @click="handleSwitchSession(session.id)">
+              <span class="session-caption">{{ formatSessionTime(session.updatedAt) }}</span>
+              <span class="session-name">{{ session.title || session.id }}</span>
+              <span class="session-id">{{ session.id }}</span>
             </button>
             <button
               class="btn-delete-session"
               type="button"
               title="删除会话"
-              :disabled="deletingSessionId === id"
-              @click.stop="handleDeleteSession(id)"
+              :disabled="deletingSessionId === session.id"
+              @click.stop="handleDeleteSession(session.id, session.title || session.id)"
             >
               <AppIcon :name="ICONS.common.close" />
             </button>
@@ -78,16 +79,17 @@
 
     <div class="sidebar-footer">
       <div class="status-card">
-        <span class="status-dot" :style="{ background: managementReady ? 'var(--success)' : 'var(--error)' }"></span>
+        <span class="status-dot" :style="{ background: accessStateColor }"></span>
         <div class="status-copy">
-          <span class="status-label">管理令牌</span>
-          <span class="status-value">{{ managementReady ? '已解锁管理接口' : '未设置，管理接口可能返回 401' }}</span>
+          <span class="status-label">访问凭证</span>
+          <span class="status-value">API 访问令牌：{{ authReady ? '已保存' : '未保存（如启用了 platform.web.authToken 请先录入）' }}</span>
+          <span class="status-value">管理令牌：{{ managementReady ? '已保存' : '未保存（管理接口可能返回 401）' }}</span>
         </div>
       </div>
 
       <button class="btn-settings" type="button" @click="handleOpenManagementToken">
         <AppIcon :name="ICONS.sidebar.key" />
-        <span>管理令牌</span>
+        <span>访问凭证</span>
       </button>
 
       <button class="btn-settings" type="button" @click="handleOpenSettings">
@@ -99,12 +101,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from './AppIcon.vue'
 import { ICONS } from '../constants/icons'
 import { useSessions } from '../composables/useSessions'
 import { loadManagementToken, subscribeManagementTokenChange } from '../utils/managementToken'
+import { loadAuthToken, subscribeAuthTokenChange } from '../utils/authToken'
 
 const props = defineProps<{
   mobileOpen: boolean
@@ -122,11 +125,33 @@ const { sessions, currentSessionId, loadSessions, newChat, switchSession, remove
 
 const deletingSessionId = ref<string | null>(null)
 const managementReady = ref(false)
+const authReady = ref(false)
+
+const accessStateColor = computed(() => {
+  if (authReady.value || managementReady.value) {
+    return 'var(--success)'
+  }
+  return 'var(--error)'
+})
 
 let unsubscribeManagementToken: (() => void) | null = null
+let unsubscribeAuthToken: (() => void) | null = null
 
-function refreshManagementState() {
+function refreshAccessState() {
   managementReady.value = !!loadManagementToken().trim()
+  authReady.value = !!loadAuthToken().trim()
+}
+
+function formatSessionTime(updatedAt?: string): string {
+  if (!updatedAt) return '会话'
+  const date = new Date(updatedAt)
+  if (Number.isNaN(date.getTime())) return '会话'
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 
 async function handleNewChat() {
@@ -141,8 +166,11 @@ async function handleSwitchSession(id: string) {
   emit('toggle')
 }
 
-async function handleDeleteSession(id: string) {
+async function handleDeleteSession(id: string, title: string) {
   if (deletingSessionId.value) return
+  const confirmed = window.confirm(`确认删除会话？\n\n${title}\n(${id})`)
+  if (!confirmed) return
+
   deletingSessionId.value = id
   try {
     await removeSession(id)
@@ -163,20 +191,22 @@ function handleOpenManagementToken() {
 
 onMounted(async () => {
   await loadSessions()
-  refreshManagementState()
-  unsubscribeManagementToken = subscribeManagementTokenChange(refreshManagementState)
+  refreshAccessState()
+  unsubscribeManagementToken = subscribeManagementTokenChange(refreshAccessState)
+  unsubscribeAuthToken = subscribeAuthTokenChange(refreshAccessState)
 })
 
 onUnmounted(() => {
   unsubscribeManagementToken?.()
+  unsubscribeAuthToken?.()
 })
 
 watch(() => route.fullPath, async () => {
   await loadSessions()
-  refreshManagementState()
+  refreshAccessState()
 })
 
 watch(() => props.mobileOpen, () => {
-  refreshManagementState()
+  refreshAccessState()
 })
 </script>

@@ -318,11 +318,12 @@
 
 <script setup lang="ts">
 import { reactive, computed, ref, onMounted, onUnmounted, watch } from 'vue'
-import { getDeployState, detectDeploy, previewDeploy, deployNginx, deployService, syncDeployCloudflare } from '../api/client'
-import type { DetectResponse, DeployResponse, DeployFormOptions, DeployPreviewResponse, CloudflareSslMode } from '../api/types'
+import { getDeployState, detectDeploy, previewDeploy, deployNginx, deployService, syncDeployCloudflare, getStatus } from '../api/client'
+import type { DetectResponse, DeployResponse, DeployFormOptions, DeployPreviewResponse, CloudflareSslMode, StatusInfo } from '../api/types'
 import AppIcon from '../components/AppIcon.vue'
 import { ICONS } from '../constants/icons'
 import { loadManagementToken, subscribeManagementTokenChange } from '../utils/managementToken'
+import { loadAuthToken, subscribeAuthTokenChange } from '../utils/authToken'
 
 const form = reactive<DeployFormOptions>({
   domain: '',
@@ -398,15 +399,36 @@ const runtimeHint = computed(() => {
 const previewDomain = computed(() => form.domain.trim() || preview.options.domain || 'chat.example.com')
 
 const managementTokenReady = ref(false)
+const authTokenReady = ref(false)
+const authProtected = ref(false)
+const managementProtected = ref(false)
+const accessRequirementLoaded = ref(false)
 let unsubscribeManagementToken: (() => void) | null = null
+let unsubscribeAuthToken: (() => void) | null = null
 
-function refreshManagementTokenReady() {
+function refreshCredentialState() {
   managementTokenReady.value = !!loadManagementToken().trim()
+  authTokenReady.value = !!loadAuthToken().trim()
+}
+
+function applyAccessRequirements(status: StatusInfo) {
+  authProtected.value = !!status.authProtected
+  managementProtected.value = !!status.managementProtected
+  accessRequirementLoaded.value = true
 }
 
 const managementNotice = computed(() => {
-  if (managementTokenReady.value) return ''
-  return '如果后端配置了 platform.web.managementToken，请先在浏览器中保存管理令牌，否则部署预览与执行会返回 401。'
+  if (!accessRequirementLoaded.value) {
+    if (managementTokenReady.value && authTokenReady.value) return ''
+    return '如果后端配置了 platform.web.authToken 或 platform.web.managementToken，请先在侧边栏“访问凭证”中保存对应令牌，否则部署预览与执行会返回 401。'
+  }
+
+  const missingTokens: string[] = []
+  if (authProtected.value && !authTokenReady.value) missingTokens.push('API 访问令牌')
+  if (managementProtected.value && !managementTokenReady.value) missingTokens.push('管理令牌')
+  if (missingTokens.length === 0) return ''
+
+  return `当前后端要求先录入${missingTokens.join('、')}，否则部署预览与执行会返回 401。`
 })
 
 const showCloudflareSync = computed(() => {
@@ -511,13 +533,15 @@ watch(form, schedulePreview, { deep: true })
 onUnmounted(() => {
   if (previewTimer) clearTimeout(previewTimer)
   unsubscribeManagementToken?.()
+  unsubscribeAuthToken?.()
 })
 
 onMounted(async () => {
-  refreshManagementTokenReady()
-  unsubscribeManagementToken = subscribeManagementTokenChange(refreshManagementTokenReady)
+  refreshCredentialState()
+  unsubscribeManagementToken = subscribeManagementTokenChange(refreshCredentialState)
+  unsubscribeAuthToken = subscribeAuthTokenChange(refreshCredentialState)
 
-  await Promise.all([loadDetect(), loadDeployState()])
+  await Promise.all([loadDetect(), loadDeployState(), loadAccessRequirements()])
   formReady.value = true
   await refreshPreview()
 })
@@ -541,6 +565,17 @@ async function loadDeployState() {
     Object.assign(form, result.defaults)
   } catch (e: any) {
     stateError.value = e.message || '未知错误'
+  }
+}
+
+async function loadAccessRequirements() {
+  try {
+    const status = await getStatus()
+    applyAccessRequirements(status)
+  } catch {
+    accessRequirementLoaded.value = false
+    authProtected.value = false
+    managementProtected.value = false
   }
 }
 

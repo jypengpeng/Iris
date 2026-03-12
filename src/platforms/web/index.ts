@@ -5,11 +5,14 @@
  * 通过 Backend API 与核心逻辑交互。
  */
 
+import * as crypto from 'crypto';
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { PlatformAdapter } from '../base';
+import { createCloudflareHandlers } from './handlers/cloudflare';
+import { createDeployHandlers } from './handlers/deploy';
 import { Backend } from '../../core/backend';
 import type { ImageInput } from '../../core/backend';
 import type { DocumentInput } from '../../media/document-extract.js';
@@ -85,6 +88,9 @@ export class WebPlatform extends PlatformAdapter {
   /** MCP 管理器引用，供热重载使用 */
   private mcpManager?: MCPManager;
 
+  /** 启动时生成的一次性部署令牌 */
+  private deployToken: string;
+
   constructor(backend: Backend, config: WebPlatformConfig) {
     super();
     this.backend = backend;
@@ -92,6 +98,7 @@ export class WebPlatform extends PlatformAdapter {
     this.router = new Router();
     this.publicDir = resolvePublicDir();
     this.setupRoutes();
+    this.deployToken = crypto.randomBytes(16).toString('hex');
   }
 
   // ============ PlatformAdapter 接口 ============
@@ -114,7 +121,7 @@ export class WebPlatform extends PlatformAdapter {
       this.server = http.createServer(async (req, res) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Management-Token');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Management-Token, X-Deploy-Token');
 
         if (req.method === 'OPTIONS') {
           res.writeHead(204);
@@ -123,20 +130,28 @@ export class WebPlatform extends PlatformAdapter {
         }
 
         const url = req.url ?? '/';
+        const pathname = new URL(url, `http://${req.headers.host ?? 'localhost'}`).pathname;
 
         // 全局 API 路由认证
         if (this.config.authToken && url.startsWith('/api/')) {
           const auth = req.headers.authorization ?? '';
           const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
           if (token !== this.config.authToken) {
-            sendJSON(res, 401,{ error: '未授权' });
+            sendJSON(res, 401, {
+              error: '未授权：缺少或无效的 API 访问令牌',
+              code: 'AUTH_TOKEN_INVALID',
+            });
             return;
           }
         }
 
         // 管理面认证
-        const pathname = new URL(url, `http://${req.headers.host ?? 'localhost'}`).pathname;
-        if (pathname === '/api/config' || pathname.startsWith('/api/config/')) {
+        if (
+          pathname === '/api/config'
+          || pathname.startsWith('/api/config/')
+          || pathname.startsWith('/api/deploy/')
+          || pathname.startsWith('/api/cloudflare/')
+        ) {
           if (!assertManagementToken(req, res, this.config.managementToken)) {
             return;
           }
@@ -145,7 +160,11 @@ export class WebPlatform extends PlatformAdapter {
         try {
           const handled = await this.router.handle(req, res);
           if (!handled) {
-            await this.serveStatic(req, res);
+            if (pathname.startsWith('/api/')) {
+              sendJSON(res, 404, { error: '未找到 API 路由' });
+            } else {
+              await this.serveStatic(req, res);
+            }
           }
         } catch (err: unknown) {
           logger.error('请求处理异常:', err);
@@ -157,6 +176,7 @@ export class WebPlatform extends PlatformAdapter {
 
       this.server.listen(this.config.port, this.config.host, () => {
         logger.info(`Web GUI 已启动: http://${this.config.host}:${this.config.port}`);
+        logger.info(`部署令牌（一键部署需要）: ${this.deployToken}`);
         resolve();
       });
     });
@@ -228,6 +248,25 @@ export class WebPlatform extends PlatformAdapter {
     this.router.delete('/api/sessions/:id/messages', sessions.truncateMessages);
     this.router.delete('/api/sessions/:id', sessions.remove);
 
+    // 部署管理 API
+    const deploy = createDeployHandlers(configPath, () => this.deployToken);
+    this.router.get('/api/deploy/state', deploy.getState);
+    this.router.get('/api/deploy/detect', deploy.detect);
+    this.router.post('/api/deploy/preview', deploy.preview);
+    this.router.post('/api/deploy/nginx', deploy.deployNginx);
+    this.router.post('/api/deploy/service', deploy.deployService);
+    this.router.post('/api/deploy/sync-cloudflare', deploy.syncCloudflare);
+
+    // Cloudflare 管理 API
+    const cloudflare = createCloudflareHandlers(configPath);
+    this.router.get('/api/cloudflare/status', cloudflare.status);
+    this.router.post('/api/cloudflare/setup', cloudflare.setup);
+    this.router.get('/api/cloudflare/dns', cloudflare.listDns);
+    this.router.post('/api/cloudflare/dns', cloudflare.addDns);
+    this.router.delete('/api/cloudflare/dns/:id', cloudflare.removeDns);
+    this.router.get('/api/cloudflare/ssl', cloudflare.getSsl);
+    this.router.put('/api/cloudflare/ssl', cloudflare.setSsl);
+
     // 配置管理 API（带热重载回调）
     const config = createConfigHandlers(configPath, async (mergedConfig) => {
       const summary = await applyRuntimeConfigReload(
@@ -255,6 +294,8 @@ export class WebPlatform extends PlatformAdapter {
         model: this.config.modelName,
         tools: this.backend.getToolNames(),
         stream: this.config.streamEnabled,
+        authProtected: !!this.config.authToken,
+        managementProtected: !!this.config.managementToken,
         platform: 'web',
       });
     });

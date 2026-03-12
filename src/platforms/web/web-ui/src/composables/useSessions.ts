@@ -6,9 +6,10 @@
 
 import { ref } from 'vue'
 import * as api from '../api/client'
+import type { SessionSummary } from '../api/types'
 
-/** 会话 ID 列表 */
-const sessions = ref<string[]>([])
+/** 会话摘要列表 */
+const sessions = ref<SessionSummary[]>([])
 
 /** 当前选中的会话 */
 const currentSessionId = ref<string | null>(null)
@@ -18,7 +19,9 @@ export function useSessions() {
     try {
       const data = await api.getSessions()
       sessions.value = data.sessions || []
-    } catch { /* 静默 */ }
+    } catch {
+      // 静默
+    }
   }
 
   function newChat() {

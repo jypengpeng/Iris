@@ -1,5 +1,5 @@
 <template>
-  <div ref="containerEl" class="messages">
+  <div ref="containerEl" class="messages" @scroll="handleScroll">
     <div class="messages-shell">
       <div v-if="messages.length === 0 && !isStreaming" class="welcome">
         <div class="welcome-badge">Iris Workspace</div>
@@ -25,7 +25,6 @@
       </div>
 
       <template v-for="(msg, i) in messages" :key="i">
-        <!-- 工具折叠按钮：当消息包含工具部分时显示 -->
         <button
           v-if="hasToolParts(msg) && getTextPartIndex(msg) === -1"
           class="tool-collapse-btn"
@@ -42,7 +41,8 @@
             v-if="part.type === 'text' && part.text?.trim() && !isInternalMarker(part.text!)"
             :role="msg.role"
             :text="part.text!"
-            @retry="emit('retry')"
+            :message-index="i"
+            @retry="emit('retry', $event)"
           />
 
           <ImageBubble
@@ -60,7 +60,6 @@
             :file-name="part.fileName"
           />
 
-          <!-- 工具折叠按钮：紧跟在文本后、工具部分前显示 -->
           <button
             v-if="part.type === 'text' && part.text?.trim() && !isInternalMarker(part.text!) && hasToolParts(msg) && isLastTextPart(msg, j)"
             class="tool-collapse-btn"
@@ -100,7 +99,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, nextTick } from 'vue'
+import { nextTick, reactive, ref, watch } from 'vue'
 import type { Message } from '../api/types'
 import MessageBubble from './MessageBubble.vue'
 import ImageBubble from './ImageBubble.vue'
@@ -115,9 +114,10 @@ const props = defineProps<{
   isStreaming: boolean
 }>()
 
-const emit = defineEmits<{ retry: [] }>()
+const emit = defineEmits<{ retry: [messageIndex: number] }>()
 
 const containerEl = ref<HTMLElement>()
+const shouldStickToBottom = ref(true)
 
 /** 记录哪些消息索引的工具被折叠 */
 const collapsedTools = reactive(new Set<number>())
@@ -128,16 +128,16 @@ function isInternalMarker(text: string): boolean {
 }
 
 function hasToolParts(msg: Message): boolean {
-  return msg.parts.some(p => p.type === 'function_call' || p.type === 'function_response')
+  return msg.parts.some((part) => part.type === 'function_call' || part.type === 'function_response')
 }
 
 function countToolParts(msg: Message): number {
-  return msg.parts.filter(p => p.type === 'function_call' || p.type === 'function_response').length
+  return msg.parts.filter((part) => part.type === 'function_call' || part.type === 'function_response').length
 }
 
 /** 判断文本 part 是否为用户可见（非内部标记） */
-function isVisibleTextPart(p: { type: string; text?: string }): boolean {
-  return p.type === 'text' && !!p.text?.trim() && !isInternalMarker(p.text!)
+function isVisibleTextPart(part: { type: string; text?: string }): boolean {
+  return part.type === 'text' && !!part.text?.trim() && !isInternalMarker(part.text!)
 }
 
 /** 获取消息中第一个有效文本部分的索引，没有则返回 -1 */
@@ -147,9 +147,9 @@ function getTextPartIndex(msg: Message): number {
 
 /** 判断当前 part 是否是消息中最后一个有效文本部分 */
 function isLastTextPart(msg: Message, partIndex: number): boolean {
-  for (let i = msg.parts.length - 1; i >= 0; i--) {
-    if (isVisibleTextPart(msg.parts[i])) {
-      return i === partIndex
+  for (let index = msg.parts.length - 1; index >= 0; index--) {
+    if (isVisibleTextPart(msg.parts[index])) {
+      return index === partIndex
     }
   }
   return false
@@ -163,20 +163,43 @@ function toggleToolCollapse(msgIndex: number) {
   }
 }
 
-function scrollToBottom() {
+function refreshStickToBottom() {
+  if (!containerEl.value) return
+  const { scrollTop, clientHeight, scrollHeight } = containerEl.value
+  shouldStickToBottom.value = scrollHeight - (scrollTop + clientHeight) <= 80
+}
+
+function handleScroll() {
+  refreshStickToBottom()
+}
+
+function scrollToBottom(force = false) {
   nextTick(() => {
-    if (containerEl.value) {
+    if (!containerEl.value) return
+    if (force || shouldStickToBottom.value) {
       containerEl.value.scrollTop = containerEl.value.scrollHeight
+      shouldStickToBottom.value = true
     }
   })
 }
 
-// 非递增变化（会话切换、retry 等）清空折叠状态，仅正常 push（+1）时保留
 watch(() => props.messages.length, (newLen, oldLen) => {
-  if (newLen - (oldLen ?? 0) !== 1) {
+  const delta = newLen - (oldLen ?? 0)
+  if (delta !== 1) {
     collapsedTools.clear()
+    scrollToBottom(true)
+    return
   }
-  scrollToBottom()
+
+  scrollToBottom(false)
 })
-watch(() => props.streamingText, scrollToBottom)
+
+watch(() => props.messages, () => {
+  collapsedTools.clear()
+  scrollToBottom(true)
+})
+
+watch(() => props.streamingText, () => {
+  scrollToBottom(false)
+})
 </script>

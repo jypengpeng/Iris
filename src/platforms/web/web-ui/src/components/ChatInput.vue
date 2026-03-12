@@ -67,7 +67,7 @@
           placeholder="给 Iris 发送消息..."
           rows="1"
           :disabled="disabled"
-          @keydown.enter.exact.prevent="handleSend"
+          @keydown.enter.exact="handleEnterKey"
           @input="autoResize"
           @paste="handlePaste"
         ></textarea>
@@ -345,6 +345,15 @@ function resetComposer() {
   nextTick(() => {
     if (inputEl.value) inputEl.value.style.height = 'auto'
   })
+}
+
+function handleEnterKey(event: KeyboardEvent) {
+  if (event.isComposing) {
+    return
+  }
+  event.preventDefault()
+
+  handleSend()
 }
 
 function handleSend() {

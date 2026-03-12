@@ -12,6 +12,8 @@ export interface StatusInfo {
   model: string;
   tools: string[];
   stream: boolean;
+  authProtected?: boolean;
+  managementProtected?: boolean;
   platform: string;
 }
 

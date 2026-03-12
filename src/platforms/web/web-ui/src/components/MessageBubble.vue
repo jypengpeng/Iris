@@ -10,7 +10,7 @@
           v-if="role === 'model' && !streaming"
           class="message-action-btn"
           type="button"
-          @click="emit('retry')"
+          @click="emit('retry', messageIndex ?? -1)"
         >
           重试
         </button>
@@ -34,9 +34,10 @@ const props = defineProps<{
   role: 'user' | 'model'
   text: string
   streaming?: boolean
+  messageIndex?: number
 }>()
 
-const emit = defineEmits<{ retry: [] }>()
+const emit = defineEmits<{ retry: [messageIndex: number] }>()
 
 const roleLabel = computed(() => (props.role === 'user' ? '你' : 'Iris'))
 const messageEl = ref<HTMLDivElement | null>(null)

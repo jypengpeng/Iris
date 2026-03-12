@@ -1,5 +1,5 @@
 <template>
-  <div class="overlay" @click.self="emit('close')">
+  <div class="overlay" @click.self="requestClose">
     <div class="settings-panel">
       <div class="settings-header">
         <div class="settings-title-group">
@@ -11,7 +11,7 @@
             <strong :style="{ color: managementReady ? 'var(--success)' : 'var(--error)' }">{{ managementReady ? '已解锁' : '未解锁' }}</strong>
           </p>
         </div>
-        <button class="btn-close" type="button" aria-label="关闭设置" @click="emit('close')">
+        <button class="btn-close" type="button" aria-label="关闭设置" @click="requestClose">
           <AppIcon :name="ICONS.common.close" />
         </button>
       </div>
@@ -532,6 +532,7 @@ const tools = ref<string[]>([])
 const statusText = ref('')
 const statusError = ref(false)
 const saving = ref(false)
+const dirty = ref(false)
 
 // ============ MCP ============
 interface MCPServerEntry {
@@ -566,7 +567,7 @@ function sanitizeMcpName(server: MCPServerEntry) {
   server.name = server.name.replace(/[^a-zA-Z0-9_]/g, '_')
 }
 
-function buildMCPPayload(): any {
+function buildMCPPayload(): { payload: any; currentNames: string[] } {
   const servers: Record<string, any> = {}
   // 被删除的服务器发送 null（deepMerge 会删除该键）
   for (const name of mcpOriginalNames.value) {
@@ -587,17 +588,26 @@ function buildMCPPayload(): any {
       entry.command = s.command
       entry.args = s.args.split('\n').map((a: string) => a.trim()).filter(Boolean)
       entry.cwd = s.cwd || null  // 空值发 null 让 deepMerge 删除旧值
+      entry.url = null
+      entry.headers = null
     } else {
       entry.url = s.url
+      entry.command = null
+      entry.args = null
+      entry.cwd = null
       if (s.authHeader && !s.authHeader.startsWith('****')) {
         entry.headers = { Authorization: s.authHeader }
+      } else if (!s.authHeader) {
+        entry.headers = null
       }
     }
     servers[s.name] = entry
   }
-  // 更新原始名称，防止多次保存时中间名残留
-  mcpOriginalNames.value = currentNames
-  return Object.keys(servers).length > 0 ? { servers } : null
+
+  return {
+    payload: Object.keys(servers).length > 0 ? { servers } : null,
+    currentNames,
+  }
 }
 
 // ============ Cloudflare ============
@@ -630,12 +640,29 @@ const streamHint = computed(() => {
 })
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('close')
+  if (e.key === 'Escape') {
+    void requestClose()
+  }
+}
+
+async function requestClose() {
+  if (saving.value) return
+
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer)
+    autoSaveTimer = null
+  }
+
+  if (dirty.value) {
+    await handleSave()
+    if (dirty.value || saving.value) return
+  }
+
+  emit('close')
 }
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
-  managementEnabled.value = true
   refreshManagementState()
   unsubscribeManagementToken = subscribeManagementTokenChange(refreshManagementState)
 })
@@ -651,6 +678,7 @@ let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 function scheduleAutoSave() {
   if (!configLoaded) return
   if (autoSaveTimer) clearTimeout(autoSaveTimer)
+  dirty.value = true
   autoSaveTimer = setTimeout(() => {
     if (saving.value) {
       scheduleAutoSave()
@@ -733,15 +761,18 @@ onMounted(async () => {
     // 等待 provider watcher 的异步回调执行完毕后再启用副作用
     await nextTick()
     configLoaded = true
-  } catch {
+    dirty.value = false
+  } catch (err: any) {
     configLoaded = true
-    statusText.value = '加载配置失败'
+    statusText.value = '加载配置失败: ' + (err?.message || '未知错误')
     statusError.value = true
+    dirty.value = false
   }
 
   try {
     const status = await getStatus()
     tools.value = status.tools || []
+    managementEnabled.value = !!status.managementProtected
   } catch {
     tools.value = []
   }
@@ -764,6 +795,11 @@ async function handleSave() {
   if (saving.value) return
 
   saving.value = true
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer)
+    autoSaveTimer = null
+  }
+
   statusText.value = ''
   statusError.value = false
 
@@ -775,7 +811,7 @@ async function handleSave() {
       light: tierEnabled.light ? buildTierPayload(tiers.light) : null,
     }
 
-    const mcpPayload = buildMCPPayload()
+    const { payload: mcpPayload, currentNames } = buildMCPPayload()
     const payload: Record<string, any> = {
       llm: llmPayload,
       system: {
@@ -792,6 +828,8 @@ async function handleSave() {
     if (result.ok) {
       statusText.value = result.restartRequired ? '已保存，需要重启生效' : '已保存并生效'
       statusError.value = false
+      mcpOriginalNames.value = currentNames
+      dirty.value = false
       // 热重载后刷新工具列表（MCP 开关会影响工具数量）
       try {
         const st = await getStatus()
@@ -800,10 +838,12 @@ async function handleSave() {
     } else {
       statusText.value = '保存失败: ' + (result.error || '未知错误')
       statusError.value = true
+      dirty.value = true
     }
   } catch (err: any) {
     statusText.value = '保存失败: ' + err.message
     statusError.value = true
+    dirty.value = true
   } finally {
     saving.value = false
   }
@@ -846,19 +886,23 @@ async function loadCfStatus() {
   try {
     const status = await cfGetStatus()
     cf.configured = status.configured
+    cf.error = status.error || ''
     cf.connected = status.connected
     cf.zones = status.zones || []
     cf.activeZoneId = status.activeZoneId
     cf.tokenSource = status.tokenSource || null
+
     // 多 zone 且未指定时，自动选第一个
     if (!cf.activeZoneId && cf.zones.length > 0) {
       cf.activeZoneId = cf.zones[0].id
     }
+
     if (status.connected) {
       await Promise.all([loadCfDns(), loadCfSsl()])
     }
-  } catch {
+  } catch (err: any) {
     cf.connected = false
+    cf.error = err?.message || '加载 Cloudflare 状态失败'
   }
 }
 

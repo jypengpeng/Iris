@@ -672,6 +672,15 @@ select:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.session-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
 .btn-delete-session {
@@ -2417,7 +2426,7 @@ select:focus-visible {
 
 /* ---- LLM 层级块 ---- */
 .tier-block {
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   border-radius: 12px;
   overflow: hidden;
   margin-bottom: 8px;
@@ -2466,7 +2475,7 @@ select:focus-visible {
 
 .tier-body {
   padding: 4px 16px 16px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-soft);
 }
 
 /* ---- MCP 按钮 ---- */
@@ -2496,7 +2505,7 @@ select:focus-visible {
 .btn-mcp-add {
   width: 100%;
   padding: 12px;
-  border: 2px dashed var(--border);
+  border: 2px dashed var(--border-soft);
   border-radius: 12px;
   background: transparent;
   color: var(--text-secondary);
@@ -2798,6 +2807,15 @@ select:focus-visible {
   .form-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .message-actions,
+  .btn-delete-session {
+    opacity: 1;
+  }
+
+  .btn-delete-session {
+    background: rgba(var(--tint-rgb), 0.06);
   }
 
   .btn-attach,

@@ -42,6 +42,14 @@ export function sanitizeConfig(data: any): any {
     result.platform.telegram.token = maskSensitive(String(result.platform.telegram.token));
   }
 
+  if (result.platform?.web?.authToken) {
+    result.platform.web.authToken = maskSensitive(String(result.platform.web.authToken));
+  }
+
+  if (result.platform?.web?.managementToken) {
+    result.platform.web.managementToken = maskSensitive(String(result.platform.web.managementToken));
+  }
+
   if (result.cloudflare?.apiToken) {
     result.cloudflare.apiToken = maskSensitive(String(result.cloudflare.apiToken));
   }

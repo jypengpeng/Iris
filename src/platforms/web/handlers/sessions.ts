@@ -70,7 +70,24 @@ export function createSessionsHandlers(storage: StorageProvider) {
   return {
     /** GET /api/sessions */
     async list(_req: http.IncomingMessage, res: http.ServerResponse) {
-      const sessions = await storage.listSessions();
+      const metas = await storage.listSessionMetas();
+      const knownIds = new Set(metas.map((meta) => meta.id));
+      const orphanIds = (await storage.listSessions()).filter((id) => !knownIds.has(id));
+      const sessions = [
+        ...metas,
+        ...orphanIds.map((id) => ({
+          id,
+          title: id,
+          cwd: '',
+          createdAt: '',
+          updatedAt: '',
+        })),
+      ].sort((left, right) => {
+        const leftTime = left.updatedAt ? new Date(left.updatedAt).getTime() : 0;
+        const rightTime = right.updatedAt ? new Date(right.updatedAt).getTime() : 0;
+        return rightTime - leftTime;
+      });
+
       sendJSON(res, 200, { sessions });
     },
 

@@ -7,15 +7,22 @@
 import type {
   ImageInput, DocumentInput, Message, StatusInfo, ChatCallbacks, DetectResponse, DeployResponse, DeploySyncCloudflareResponse,
   DeployFormOptions, DeployStateResponse, DeployPreviewResponse,
-  CfStatusResponse, CfDnsRecord, CfDnsInput, CfSetupResponse,
+  CfStatusResponse, CfDnsRecord, CfDnsInput, CfSetupResponse, SessionSummary,
 } from './types'
 import { clearManagementToken, loadManagementToken } from '../utils/managementToken'
+import { clearAuthToken, loadAuthToken } from '../utils/authToken'
+
+interface ErrorResponseBody {
+  error?: string
+  code?: string
+}
 
 // ============ 通用 ============
 
 /** 是否为管理接口 */
 function isManagementRequest(url: string): boolean {
   return url === '/api/config'
+    || url.startsWith('/api/config/')
     || url.startsWith('/api/deploy/')
     || url.startsWith('/api/cloudflare/')
 }
@@ -49,14 +56,37 @@ function mergeHeaders(...headers: Array<HeadersInit | undefined>): Record<string
   return merged
 }
 
-/** 发送请求并检查响应状态 */
-async function request(url: string, init?: RequestInit): Promise<Response> {
-  const headers = mergeHeaders(init?.headers)
+function applyStoredTokens(url: string, headers?: HeadersInit): Record<string, string> {
+  const merged = mergeHeaders(headers)
+
+  const authToken = loadAuthToken().trim()
+  if (authToken) {
+    merged.Authorization = `Bearer ${authToken}`
+  }
 
   if (isManagementRequest(url)) {
-    const token = loadManagementToken().trim()
-    if (token) headers['X-Management-Token'] = token
+    const managementToken = loadManagementToken().trim()
+    if (managementToken) {
+      merged['X-Management-Token'] = managementToken
+    }
   }
+
+  return merged
+}
+
+function handleUnauthorized(body: ErrorResponseBody): void {
+  if (body.code === 'AUTH_TOKEN_INVALID') {
+    clearAuthToken()
+  }
+
+  if (body.code === 'MANAGEMENT_TOKEN_INVALID') {
+    clearManagementToken()
+  }
+}
+
+/** 发送请求并检查响应状态 */
+async function request(url: string, init?: RequestInit): Promise<Response> {
+  const headers = applyStoredTokens(url, init?.headers)
 
   const res = await fetch(url, {
     ...init,
@@ -64,9 +94,9 @@ async function request(url: string, init?: RequestInit): Promise<Response> {
   })
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    if (res.status === 401 && isManagementRequest(url)) {
-      clearManagementToken()
+    const body = await res.json().catch(() => ({} as ErrorResponseBody))
+    if (res.status === 401) {
+      handleUnauthorized(body)
     }
     throw new Error(body.error || `HTTP ${res.status}`)
   }
@@ -76,7 +106,7 @@ async function request(url: string, init?: RequestInit): Promise<Response> {
 
 // ============ REST ============
 
-export async function getSessions(): Promise<{ sessions: string[] }> {
+export async function getSessions(): Promise<{ sessions: SessionSummary[] }> {
   const res = await request('/api/sessions')
   return res.json()
 }
@@ -227,7 +257,7 @@ export function sendChat(sessionId: string | null, message: string, callbacks: C
 
   fetch('/api/chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: applyStoredTokens('/api/chat', { 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       sessionId,
       message,
@@ -237,7 +267,10 @@ export function sendChat(sessionId: string | null, message: string, callbacks: C
     signal: controller.signal,
   }).then(async (response) => {
     if (!response.ok) {
-      const err = await response.json().catch(() => ({ error: '请求失败' }))
+      const err = await response.json().catch(() => ({ error: '请求失败' } as ErrorResponseBody))
+      if (response.status === 401) {
+        handleUnauthorized(err)
+      }
       callbacks.onError?.(err.error || `HTTP ${response.status}`)
       return
     }
@@ -275,7 +308,9 @@ export function sendChat(sessionId: string | null, message: string, callbacks: C
               case 'done': callbacks.onDone?.(); break
               case 'error': callbacks.onError?.(event.message); break
             }
-          } catch { /* 忽略解析错误（如心跳） */ }
+          } catch {
+            // 忽略解析错误（如心跳）
+          }
         }
       }
     }

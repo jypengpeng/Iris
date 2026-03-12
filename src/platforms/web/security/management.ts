@@ -32,7 +32,10 @@ export function assertManagementToken(
 
   const presented = getPresentedManagementToken(req);
   if (!presented || !safeEqual(presented, expectedToken)) {
-    sendJSON(res, 401, { error: '未授权：缺少或无效的管理令牌' });
+    sendJSON(res, 401, {
+      error: '未授权：缺少或无效的管理令牌',
+      code: 'MANAGEMENT_TOKEN_INVALID',
+    });
     return false;
   }
 

@@ -498,7 +498,17 @@ export class Backend extends EventEmitter {
         streamOutputLastChunkAt = now;
         streamOutputChunkCount++;
         for (const part of deltaParts) {
-          emittedParts.push(appendMergedPart(parts, part, now, thoughtTiming));
+          const merged = appendMergedPart(parts, part, now, thoughtTiming);
+          // appendMergedPart 返回的是 parts 数组中累积后的对象引用（原地拼接），
+          // 不能直接作为增量发送，否则前端会收到全量内容导致重复。
+          // 这里用原始的 delta part 浅拷贝作为增量发送。
+          const delta: Part = { ...part };
+          // 如果是 thought 类型，补上 appendMergedPart 计算出的 timing 信息
+          if ('text' in delta && 'text' in merged
+            && delta.thought === true && merged.thoughtDurationMs != null) {
+            delta.thoughtDurationMs = merged.thoughtDurationMs;
+          }
+          emittedParts.push(delta);
         }
         this.emit('stream:parts', sessionId, emittedParts);
       }

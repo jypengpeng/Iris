@@ -6,6 +6,7 @@ src/platforms/web/web-ui/dist/
 src/platforms/web/web-ui/node_modules/
 *.log
 logs/
+limcode/
 
 .env
 

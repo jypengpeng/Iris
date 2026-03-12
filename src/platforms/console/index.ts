@@ -78,8 +78,27 @@ function generateSessionId(): string {
   return `${ts}_${rand}`;
 }
 
+function formatModelList(models: ReturnType<Backend['listModels']>): string {
+  if (models.length === 0) {
+    return '当前没有可用模型。';
+  }
+
+  const maxNameLength = Math.max(...models.map(model => model.modelName.length));
+  const lines = ['可用模型：', '', `  ${'name'.padEnd(maxNameLength)}  模型 ID`];
+
+  for (const model of models) {
+    const marker = model.current ? '*' : ' ';
+    lines.push(`${marker} ${model.modelName.padEnd(maxNameLength)}  ${model.modelId}`);
+  }
+
+  lines.push('', '其中 * 表示当前活动模型。', '使用 /model <modelName> 切换当前模型。');
+  return lines.join('\n');
+}
+
 export interface ConsolePlatformOptions {
   modeName?: string;
+  modelName: string;
+  modelId: string;
   contextWindow?: number;
   configDir: string;
   getMCPManager: () => MCPManager | undefined;
@@ -89,6 +108,8 @@ export interface ConsolePlatformOptions {
 export class ConsolePlatform extends PlatformAdapter {
   private sessionId: string;
   private modeName?: string;
+  private modelId: string;
+  private modelName: string;
   private contextWindow?: number;
   private backend: Backend;
   private settingsController: ConsoleSettingsController;
@@ -103,6 +124,8 @@ export class ConsolePlatform extends PlatformAdapter {
     this.backend = backend;
     this.sessionId = generateSessionId();
     this.modeName = options.modeName;
+    this.modelId = options.modelId;
+    this.modelName = options.modelName;
     this.contextWindow = options.contextWindow;
     this.settingsController = new ConsoleSettingsController({
       backend,
@@ -184,10 +207,13 @@ export class ConsolePlatform extends PlatformAdapter {
         onLoadSession: (id: string) => this.handleLoadSession(id),
         onListSessions: () => this.handleListSessions(),
         onRunCommand: (cmd: string) => this.handleRunCommand(cmd),
+        onModelCommand: (text: string) => this.handleModelCommand(text),
         onLoadSettings: () => this.handleLoadSettings(),
         onSaveSettings: (snapshot: ConsoleSettingsSnapshot) => this.handleSaveSettings(snapshot),
         onExit: () => this.stop(),
         modeName: this.modeName,
+        modelId: this.modelId,
+        modelName: this.modelName,
         contextWindow: this.contextWindow,
       });
       try {
@@ -217,6 +243,44 @@ export class ConsolePlatform extends PlatformAdapter {
 
   private handleRunCommand(cmd: string): { output: string; cwd: string } {
     return this.backend.runCommand(cmd);
+  }
+
+  private handleModelCommand(text: string): { message: string; modelId?: string; modelName?: string; contextWindow?: number } {
+    const nextModelName = text.slice('/model'.length).trim();
+
+    if (!nextModelName) {
+      const current = this.backend.getCurrentModelInfo();
+      this.modelName = current.modelName;
+      this.modelId = current.modelId;
+      this.contextWindow = current.contextWindow;
+      return {
+        message: formatModelList(this.backend.listModels()),
+        modelName: current.modelName,
+        modelId: current.modelId,
+        contextWindow: current.contextWindow,
+      };
+    }
+
+    try {
+      const info = this.backend.switchModel(nextModelName);
+      this.modelName = info.modelName;
+      this.modelId = info.modelId;
+      this.contextWindow = info.contextWindow;
+      return {
+        message: `当前模型已切换为：${info.modelName}  ${info.modelId}`,
+        modelName: info.modelName,
+        modelId: info.modelId,
+        contextWindow: info.contextWindow,
+      };
+    } catch (err: unknown) {
+      const detail = err instanceof Error ? err.message : String(err);
+      return {
+        message: `切换模型失败：${detail}\n\n${formatModelList(this.backend.listModels())}`,
+        modelName: this.modelName,
+        modelId: this.modelId,
+        contextWindow: this.contextWindow,
+      };
+    }
   }
 
   private async handleLoadSession(id: string): Promise<void> {

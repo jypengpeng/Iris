@@ -20,19 +20,25 @@ const SUPPORTED_PROVIDERS = new Set<LLMConfig['provider']>([
   'claude',
 ]);
 
-type TierName = 'primary' | 'secondary' | 'light';
+function resolveStoredModelConfig(rawLLM: any, modelName?: string): any {
+  if (rawLLM?.models && typeof rawLLM.models === 'object' && !Array.isArray(rawLLM.models)) {
+    const requestedModelName = typeof modelName === 'string' && modelName.trim()
+      ? modelName.trim()
+      : typeof rawLLM.defaultModel === 'string' && rawLLM.defaultModel.trim()
+        ? rawLLM.defaultModel.trim()
+        : undefined;
 
-function isTierName(value: unknown): value is TierName {
-  return value === 'primary' || value === 'secondary' || value === 'light';
-}
+    if (requestedModelName && rawLLM.models[requestedModelName] && typeof rawLLM.models[requestedModelName] === 'object') {
+      return rawLLM.models[requestedModelName];
+    }
 
-function resolveStoredTierConfig(rawLLM: any, tier: TierName): any {
-  if (rawLLM?.[tier] && typeof rawLLM[tier] === 'object') {
-    return rawLLM[tier];
+    for (const value of Object.values(rawLLM.models) as any[]) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value;
+      }
+    }
   }
-  if (tier === 'primary' && rawLLM && typeof rawLLM === 'object') {
-    return rawLLM;
-  }
+
   return {};
 }
 
@@ -42,14 +48,16 @@ function resolveModelLookupInput(configDir: string, body: any): {
   baseUrl: string;
   usedStoredApiKey: boolean;
 } {
-  const tier = isTierName(body?.tier) ? body.tier : 'primary';
+  const requestedModelName = typeof body?.modelName === 'string' && body.modelName.trim()
+    ? body.modelName.trim()
+    : undefined;
   const rawConfig = loadRawConfigDir(configDir);
   const rawLLM = rawConfig.llm ?? {};
-  const storedTier = resolveStoredTierConfig(rawLLM, tier);
+  const storedModel = resolveStoredModelConfig(rawLLM, requestedModelName);
 
   const providerValue = typeof body?.provider === 'string' && body.provider.trim()
     ? body.provider.trim()
-    : String(storedTier?.provider ?? rawLLM?.provider ?? 'gemini').trim();
+    : String(storedModel?.provider ?? 'gemini').trim();
 
   if (!SUPPORTED_PROVIDERS.has(providerValue as LLMConfig['provider'])) {
     throw new Error(`不支持的提供商: ${providerValue || '(空)'}`);
@@ -57,12 +65,12 @@ function resolveModelLookupInput(configDir: string, body: any): {
 
   const baseUrl = typeof body?.baseUrl === 'string' && body.baseUrl.trim()
     ? body.baseUrl.trim()
-    : String(storedTier?.baseUrl ?? rawLLM?.baseUrl ?? '').trim();
+    : String(storedModel?.baseUrl ?? '').trim();
 
   const requestApiKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
   const usedStoredApiKey = !requestApiKey || isMasked(requestApiKey);
   const apiKey = usedStoredApiKey
-    ? String(storedTier?.apiKey ?? (tier === 'primary' ? rawLLM?.apiKey ?? '' : '')).trim()
+    ? String(storedModel?.apiKey ?? '').trim()
     : requestApiKey;
 
   if (!apiKey) {

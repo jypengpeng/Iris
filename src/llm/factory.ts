@@ -11,7 +11,7 @@ import { createOpenAICompatibleProvider } from './providers/openai-compatible';
 import { createClaudeProvider } from './providers/claude';
 import { createOpenAIResponsesProvider } from './providers/openai-responses';
 import { LLMRouter } from './router';
-import { LLMConfig, TieredLLMConfig } from '../config/types';
+import { LLMConfig, LLMRegistryConfig } from '../config/types';
 
 export function createLLMFromConfig(config: LLMConfig): LLMProvider {
   switch (config.provider) {
@@ -51,11 +51,20 @@ export function createLLMFromConfig(config: LLMConfig): LLMProvider {
   }
 }
 
-/** 根据三层配置创建路由器 */
-export function createLLMRouter(config: TieredLLMConfig): LLMRouter {
-  return new LLMRouter({
-    primary: createLLMFromConfig(config.primary),
-    secondary: config.secondary ? createLLMFromConfig(config.secondary) : undefined,
-    light: config.light ? createLLMFromConfig(config.light) : undefined,
+/** 根据模型池配置创建路由器 */
+export function createLLMRouter(config: LLMRegistryConfig, currentModelName?: string): LLMRouter {
+  const router = new LLMRouter({
+    defaultModelName: config.defaultModelName,
+    models: config.models.map(model => ({
+      modelName: model.modelName,
+      provider: createLLMFromConfig(model),
+      config: model,
+    })),
   });
+
+  if (currentModelName && router.hasModel(currentModelName)) {
+    router.setCurrentModel(currentModelName);
+  }
+
+  return router;
 }

@@ -14,7 +14,7 @@ import { ToolRegistry } from '../../registry';
 import { ToolLoop, LLMCaller } from '../../../core/tool-loop';
 import { PromptAssembler } from '../../../prompt/assembler';
 import { createLogger } from '../../../logger';
-import { SubAgentTypeRegistry } from './types';
+import { SubAgentTypeRegistry, SubAgentTypeConfig } from './types';
 
 // 统一导出类型层
 export type { SubAgentTypeConfig } from './types';
@@ -42,6 +42,14 @@ function getSubAgentTypeName(args: Record<string, unknown>): string {
   return typeof type === 'string' && type.trim() ? type : 'general-purpose';
 }
 
+function formatTypeSuffix(type: SubAgentTypeConfig): string {
+  const segments = [type.parallel ? '可并行调度' : '串行调度'];
+  if (type.modelName) {
+    segments.push(`模型名称=${type.modelName}`);
+  }
+  return segments.join('，');
+}
+
 /**
  * 创建 sub_agent 工具
  *
@@ -50,10 +58,10 @@ function getSubAgentTypeName(args: Record<string, unknown>): string {
  */
 export function createSubAgentTool(deps: SubAgentToolDeps, currentDepth: number = 0): ToolDefinition {
   const typeDescriptions = deps.subAgentTypes.getAll()
-    .map(t => `  - ${t.name}: ${t.description}（${t.parallel ? '可并行调度' : '串行调度'}）`)
+    .map(t => `  - ${t.name}: ${t.description}（${formatTypeSuffix(t)}）`)
     .join('\n');
 
-  const toolDescription = `启动子代理执行子任务。子代理拥有独立上下文和工具循环，完成后返回结果。不同类型可分别配置是否参与并行调度。\n\n可用类型：\n${typeDescriptions}`;
+  const toolDescription = `启动子代理执行子任务。子代理拥有独立上下文和工具循环，完成后返回结果。不同类型可分别配置是否参与并行调度，以及是否固定使用某个模型。\n\n可用类型：\n${typeDescriptions}`;
 
   return {
     declaration: {
@@ -119,8 +127,8 @@ export function createSubAgentTool(deps: SubAgentToolDeps, currentDepth: number 
         maxRounds: typeConfig.maxToolRounds,
       });
 
-      const callLLM: LLMCaller = async (request, tier) => {
-        const response = await deps.getRouter().chat(request, tier);
+      const callLLM: LLMCaller = async (request, modelName) => {
+        const response = await deps.getRouter().chat(request, modelName);
         return response.content;
       };
 
@@ -128,7 +136,7 @@ export function createSubAgentTool(deps: SubAgentToolDeps, currentDepth: number 
         const result = await loop.run(
           [{ role: 'user', parts: [{ text: prompt }] }],
           callLLM,
-          { primaryTier: typeConfig.tier, secondaryTier: typeConfig.tier },
+          { modelName: typeConfig.modelName },
         );
         logger.info(`子代理完成: type=${typeName}`);
         return { result: result.text };

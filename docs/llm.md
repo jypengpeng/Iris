@@ -27,7 +27,7 @@ src/llm/
 │   ├── openai-responses.ts
 │   └── claude.ts
 ├── factory.ts                  # 按配置创建 provider / router
-├── router.ts                   # 三层 LLM 路由
+├── router.ts                   # 模型池路由与当前活动模型管理
 ├── transport.ts                # 通用 fetch 发送
 ├── response.ts                 # 非流式 / 流式统一后处理
 └── vision.ts                   # vision 能力判定（supportsVision / 模型名启发式）
@@ -116,9 +116,9 @@ transport.sendRequest()
 
 ### 能力判定
 
-Iris 通过两种方式判断主模型是否支持图片输入：
+Iris 通过两种方式判断当前活动模型是否支持图片输入：
 
-1. `llm.primary.supportsVision` 显式声明
+1. `llm.models.<modelName>.supportsVision` 显式声明
 2. 若未声明，则由 `src/llm/vision.ts` 根据模型名启发式判断
 
 推荐：
@@ -163,24 +163,22 @@ OCR 不在 provider 内部做，而是在 Backend 进入 LLM 前预处理：
 
 ---
 
-## 三层 LLM 路由
+## 模型池路由
 
 `src/llm/router.ts` 定义了：
 
-- `primary`：用户主对话
-- `secondary`：工具循环后续轮次
-- `light`：轻量辅助任务
+- 一组按 `modelName` 注册的模型
+- 一个当前活动模型
+- 按 `modelName` 切换、查询和列出模型的能力
 
-回退链：
+配置规则：
 
 ```text
-light -> secondary -> primary
+defaultModel -> 启动默认模型名称
+models.<modelName>.model -> 提供商真实模型 id
 ```
 
-图片会话的一个额外约束：
-
-- 如果当前请求历史中包含图片输入，Backend 会把工具循环后续轮次也固定到 `primary`
-- 目的是避免 `secondary` 恰好是不支持 vision 的文本模型，导致后续轮次无法理解同一上下文里的图片
+- 运行中的 Console TUI 可以通过 `/model <modelName>` 切换当前活动模型
 
 ---
 

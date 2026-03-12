@@ -8,7 +8,7 @@ import Gradient from 'ink-gradient';
 import TextInput from 'ink-text-input';
 import type { MCPServerInfo } from '../../../mcp';
 import {
-  applyTierProviderChange,
+  applyModelProviderChange,
   cloneConsoleSettingsSnapshot,
   CONSOLE_LLM_PROVIDER_OPTIONS,
   CONSOLE_MCP_TRANSPORT_OPTIONS,
@@ -16,20 +16,20 @@ import {
   ConsoleMCPTransport,
   ConsoleSettingsSaveResult,
   ConsoleSettingsSnapshot,
-  ConsoleTierName,
   createDefaultMCPServerEntry,
+  createEmptyModel,
 } from '../settings';
 
 type SettingsSection = 'general' | 'mcp' | 'tools';
 type StatusKind = 'info' | 'success' | 'warning' | 'error';
 
 type RowTarget =
-  | { kind: 'tierProvider'; tier: ConsoleTierName }
-  | { kind: 'tierField'; tier: ConsoleTierName; field: 'model' | 'apiKey' | 'baseUrl' }
-  | { kind: 'tierEnabled'; tier: Exclude<ConsoleTierName, 'primary'> }
+  | { kind: 'modelProvider'; modelIndex: number }
+  | { kind: 'modelField'; modelIndex: number; field: 'modelName' | 'modelId' | 'apiKey' | 'baseUrl' }
+  | { kind: 'modelDefault'; modelIndex: number }
   | { kind: 'systemField'; field: 'systemPrompt' | 'maxToolRounds' | 'stream' }
   | { kind: 'mcpField'; serverIndex: number; field: 'name' | 'enabled' | 'transport' | 'command' | 'args' | 'cwd' | 'url' | 'authHeader' | 'timeout' }
-  | { kind: 'action'; action: 'addMcp' };
+  | { kind: 'action'; action: 'addModel' | 'addMcp' };
 
 interface SettingsRow {
   id: string;
@@ -43,7 +43,7 @@ interface SettingsRow {
 }
 
 interface EditorState {
-  target: Extract<RowTarget, { kind: 'tierField' | 'systemField' | 'mcpField' }>;
+  target: Extract<RowTarget, { kind: 'modelField' | 'systemField' | 'mcpField' }>;
   label: string;
   value: string;
   hint?: string;
@@ -117,8 +117,9 @@ function wrapList(items: string[], maxWidth: number): string[] {
 function getEditableFingerprint(snapshot: ConsoleSettingsSnapshot | null): string {
   if (!snapshot) return '';
   return JSON.stringify({
-    tiers: snapshot.tiers,
-    tierEnabled: snapshot.tierEnabled,
+    models: snapshot.models,
+    modelOriginalNames: snapshot.modelOriginalNames,
+    defaultModelName: snapshot.defaultModelName,
     system: snapshot.system,
     mcpServers: snapshot.mcpServers,
     mcpOriginalNames: snapshot.mcpOriginalNames,
@@ -166,86 +167,85 @@ function buildRows(snapshot: ConsoleSettingsSnapshot, termWidth: number): Settin
     kind: 'section',
     section: 'general',
     label: '模型与系统',
-    description: '管理 LLM 三层路由、系统提示词、工具轮次与流式输出。',
+    description: '管理 LLM 模型池、默认模型、系统提示词、工具轮次与流式输出。',
   });
 
-  pushField(
-    'tier.primary.provider',
-    'general',
-    'Primary / Provider',
-    snapshot.tiers.primary.provider,
-    { kind: 'tierProvider', tier: 'primary' },
-    '左右方向键切换 Provider；切换后会按默认值补齐 model/baseUrl。',
-  );
-  pushField(
-    'tier.primary.model',
-    'general',
-    'Primary / Model',
-    snapshot.tiers.primary.model || '(空)',
-    { kind: 'tierField', tier: 'primary', field: 'model' },
-    '回车编辑模型名。',
-  );
-  pushField(
-    'tier.primary.apiKey',
-    'general',
-    'Primary / API Key',
-    snapshot.tiers.primary.apiKey || '未配置',
-    { kind: 'tierField', tier: 'primary', field: 'apiKey' },
-    '掩码值表示已读取已保存密钥；保持不变不会覆盖。',
-  );
-  pushField(
-    'tier.primary.baseUrl',
-    'general',
-    'Primary / Base URL',
-    snapshot.tiers.primary.baseUrl || '(空)',
-    { kind: 'tierField', tier: 'primary', field: 'baseUrl' },
-    '回车编辑服务地址。',
-  );
+  rows.push({
+    id: 'model.add',
+    kind: 'action',
+    section: 'general',
+    label: '新增模型',
+    value: 'Enter / A',
+    target: { kind: 'action', action: 'addModel' },
+    description: '创建新的模型草稿。',
+    indent: 2,
+  });
 
-  for (const tierName of ['secondary', 'light'] as const) {
+  snapshot.models.forEach((model, index) => {
+    const displayName = model.modelName || `model_${index + 1}`;
+    rows.push({
+      id: `model.${index}.summary`,
+      kind: 'info',
+      section: 'general',
+      label: `${displayName} · ${model.provider} · ${model.modelId || '(空模型 ID)'}`,
+      indent: 4,
+    });
+
     pushField(
-      `tier.${tierName}.enabled`,
+      `model.${index}.default`,
       'general',
-      `${tierName[0].toUpperCase()}${tierName.slice(1)} / Enabled`,
-      boolText(snapshot.tierEnabled[tierName]),
-      { kind: 'tierEnabled', tier: tierName },
-      '空格切换启用状态；启用后才会参与路由。',
+      '设为默认',
+      boolText(snapshot.defaultModelName === model.modelName && !!model.modelName),
+      { kind: 'modelDefault', modelIndex: index },
+      'Space 或 Enter 设为默认模型。',
+      6,
     );
-
-    if (snapshot.tierEnabled[tierName]) {
-      const tier = snapshot.tiers[tierName];
-      pushField(
-        `tier.${tierName}.provider`,
-        'general',
-        `${tierName[0].toUpperCase()}${tierName.slice(1)} / Provider`,
-        tier.provider,
-        { kind: 'tierProvider', tier: tierName },
-        '左右方向键切换 Provider。',
-      );
-      pushField(
-        `tier.${tierName}.model`,
-        'general',
-        `${tierName[0].toUpperCase()}${tierName.slice(1)} / Model`,
-        tier.model || '(空)',
-        { kind: 'tierField', tier: tierName, field: 'model' },
-      );
-      pushField(
-        `tier.${tierName}.apiKey`,
-        'general',
-        `${tierName[0].toUpperCase()}${tierName.slice(1)} / API Key`,
-        tier.apiKey || '未配置',
-        { kind: 'tierField', tier: tierName, field: 'apiKey' },
-        '掩码值不会在保存时覆盖原密钥。',
-      );
-      pushField(
-        `tier.${tierName}.baseUrl`,
-        'general',
-        `${tierName[0].toUpperCase()}${tierName.slice(1)} / Base URL`,
-        tier.baseUrl || '(空)',
-        { kind: 'tierField', tier: tierName, field: 'baseUrl' },
-      );
-    }
-  }
+    pushField(
+      `model.${index}.provider`,
+      'general',
+      'Provider',
+      model.provider,
+      { kind: 'modelProvider', modelIndex: index },
+      '左右方向键切换 Provider；切换后会按默认值补齐模型 ID 和 Base URL。',
+      6,
+    );
+    pushField(
+      `model.${index}.modelName`,
+      'general',
+      '名称',
+      model.modelName || '(空)',
+      { kind: 'modelField', modelIndex: index, field: 'modelName' },
+      '回车编辑。名称会作为 llm.models 下的键，也用于 /model 切换。',
+      6,
+    );
+    pushField(
+      `model.${index}.modelId`,
+      'general',
+      '模型 ID',
+      model.modelId || '(空)',
+      { kind: 'modelField', modelIndex: index, field: 'modelId' },
+      '回车编辑真实模型 ID。',
+      6,
+    );
+    pushField(
+      `model.${index}.apiKey`,
+      'general',
+      'API Key',
+      model.apiKey || '未配置',
+      { kind: 'modelField', modelIndex: index, field: 'apiKey' },
+      '掩码值表示已读取已保存密钥；保持不变不会覆盖。',
+      6,
+    );
+    pushField(
+      `model.${index}.baseUrl`,
+      'general',
+      'Base URL',
+      model.baseUrl || '(空)',
+      { kind: 'modelField', modelIndex: index, field: 'baseUrl' },
+      '回车编辑服务地址。',
+      6,
+    );
+  });
 
   pushField(
     'system.systemPrompt',
@@ -533,6 +533,16 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
     }
   }, [onLoad, setStatus]);
 
+  const handleAddModel = useCallback(() => {
+    let nextIndex = 0;
+    updateDraft((snapshot: ConsoleSettingsSnapshot) => {
+      nextIndex = snapshot.models.length;
+      snapshot.models.push(createEmptyModel());
+    });
+    setSelectedRowId(`model.${nextIndex}.modelName`);
+    setStatus('已新增模型草稿，请先填写名称后保存', 'info');
+  }, [setStatus, updateDraft]);
+
   const handleAddMcpServer = useCallback(() => {
     let nextIndex = 0;
     updateDraft((snapshot: ConsoleSettingsSnapshot) => {
@@ -543,14 +553,16 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
     setStatus('已新增 MCP 服务器草稿，请先填写名称后保存', 'info');
   }, [setStatus, updateDraft]);
 
-  const startEdit = useCallback((target: Extract<RowTarget, { kind: 'tierField' | 'systemField' | 'mcpField' }>) => {
+  const startEdit = useCallback((target: Extract<RowTarget, { kind: 'modelField' | 'systemField' | 'mcpField' }>) => {
     if (!draft) return;
 
-    if (target.kind === 'tierField') {
-      const value = draft.tiers[target.tier][target.field];
+    if (target.kind === 'modelField') {
+      const model = draft.models[target.modelIndex];
+      if (!model) return;
+      const value = model[target.field];
       setEditor({
         target,
-        label: `${target.tier}.${target.field}`,
+        label: `${model.modelName || `model_${target.modelIndex + 1}`}.${target.field}`,
         value,
       });
       setEditorValue(String(value ?? ''));
@@ -595,10 +607,11 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
 
   const applyCycle = useCallback((target: RowTarget, direction: 1 | -1) => {
     updateDraft((snapshot: ConsoleSettingsSnapshot) => {
-      if (target.kind === 'tierProvider') {
-        const current = snapshot.tiers[target.tier].provider;
-        const next = cycleValue(CONSOLE_LLM_PROVIDER_OPTIONS, current, direction);
-        snapshot.tiers[target.tier] = applyTierProviderChange(snapshot.tiers[target.tier], next as ConsoleLLMProvider);
+      if (target.kind === 'modelProvider') {
+        const model = snapshot.models[target.modelIndex];
+        if (!model) return;
+        const next = cycleValue(CONSOLE_LLM_PROVIDER_OPTIONS, model.provider, direction);
+        snapshot.models[target.modelIndex] = applyModelProviderChange(model, next as ConsoleLLMProvider);
         return;
       }
 
@@ -612,8 +625,10 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
 
   const applyToggle = useCallback((target: RowTarget) => {
     updateDraft((snapshot: ConsoleSettingsSnapshot) => {
-      if (target.kind === 'tierEnabled') {
-        snapshot.tierEnabled[target.tier] = !snapshot.tierEnabled[target.tier];
+      if (target.kind === 'modelDefault') {
+        const model = snapshot.models[target.modelIndex];
+        if (!model || !model.modelName.trim()) return;
+        snapshot.defaultModelName = model.modelName.trim();
         return;
       }
 
@@ -657,14 +672,22 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
     }
 
     updateDraft((snapshot: ConsoleSettingsSnapshot) => {
-      if (editor.target.kind === 'tierField') {
-        const tier = snapshot.tiers[editor.target.tier as ConsoleTierName];
-        if (editor.target.field === 'model') {
-          tier.model = value;
+      if (editor.target.kind === 'modelField') {
+        const model = snapshot.models[editor.target.modelIndex];
+        if (!model) return;
+
+        if (editor.target.field === 'modelName') {
+          const previousName = model.modelName;
+          model.modelName = value.trim();
+          if (snapshot.defaultModelName === previousName) {
+            snapshot.defaultModelName = model.modelName;
+          }
+        } else if (editor.target.field === 'modelId') {
+          model.modelId = value;
         } else if (editor.target.field === 'apiKey') {
-          tier.apiKey = value;
+          model.apiKey = value;
         } else {
-          tier.baseUrl = value;
+          model.baseUrl = value;
         }
         return;
       }
@@ -733,6 +756,35 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
     }
   }, [draft, onSave, saving, setStatus]);
 
+  const handleDeleteCurrentModel = useCallback(() => {
+    if (!selectedRow?.target || !draft) {
+      setStatus('请先选中某个模型字段后再删除', 'warning');
+      return;
+    }
+
+    if (selectedRow.target.kind !== 'modelField' && selectedRow.target.kind !== 'modelProvider' && selectedRow.target.kind !== 'modelDefault') {
+      setStatus('请先选中某个模型字段后再删除', 'warning');
+      return;
+    }
+
+    if (draft.models.length <= 1) {
+      setStatus('至少需要保留一个模型', 'warning');
+      return;
+    }
+
+    const index = selectedRow.target.modelIndex;
+    const model = draft.models[index];
+    if (!model) return;
+
+    updateDraft((snapshot: ConsoleSettingsSnapshot) => {
+      snapshot.models.splice(index, 1);
+      if (snapshot.defaultModelName === model.modelName) {
+        snapshot.defaultModelName = snapshot.models[0]?.modelName ?? '';
+      }
+    });
+    setStatus(`已删除模型草稿：${model.modelName || `model_${index + 1}`}（未保存）`, 'warning');
+  }, [draft, selectedRow, setStatus, updateDraft]);
+
   const handleDeleteCurrentServer = useCallback(() => {
     if (!selectedRow?.target || selectedRow.target.kind !== 'mcpField' || !draft) {
       setStatus('请先选中某个 MCP 服务器字段后再删除', 'warning');
@@ -783,7 +835,7 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
     }
 
     if (selectedRow?.target && key.leftArrow) {
-      if (selectedRow.target.kind === 'tierProvider' || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'transport')) {
+      if (selectedRow.target.kind === 'modelProvider' || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'transport')) {
         applyCycle(selectedRow.target, -1);
       }
       setPendingLeaveConfirm(false);
@@ -791,7 +843,7 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
     }
 
     if (selectedRow?.target && key.rightArrow) {
-      if (selectedRow.target.kind === 'tierProvider' || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'transport')) {
+      if (selectedRow.target.kind === 'modelProvider' || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'transport')) {
         applyCycle(selectedRow.target, 1);
       }
       setPendingLeaveConfirm(false);
@@ -819,18 +871,26 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
     }
 
     if (input.toLowerCase() === 'a') {
-      handleAddMcpServer();
+      if (selectedRow?.section === 'mcp') {
+        handleAddMcpServer();
+      } else {
+        handleAddModel();
+      }
       return;
     }
 
     if (input.toLowerCase() === 'd') {
-      handleDeleteCurrentServer();
+      if (selectedRow?.target?.kind === 'mcpField') {
+        handleDeleteCurrentServer();
+      } else {
+        handleDeleteCurrentModel();
+      }
       return;
     }
 
     if (input === ' ' && selectedRow?.target) {
       if (
-        selectedRow.target.kind === 'tierEnabled'
+        selectedRow.target.kind === 'modelDefault'
         || (selectedRow.target.kind === 'systemField' && selectedRow.target.field === 'stream')
         || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'enabled')
       ) {
@@ -840,13 +900,17 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
     }
 
     if (key.return && selectedRow?.target) {
-      if (selectedRow.target.kind === 'action' && selectedRow.target.action === 'addMcp') {
-        handleAddMcpServer();
+      if (selectedRow.target.kind === 'action') {
+        if (selectedRow.target.action === 'addMcp') {
+          handleAddMcpServer();
+        } else {
+          handleAddModel();
+        }
         return;
       }
 
       if (
-        selectedRow.target.kind === 'tierEnabled'
+        selectedRow.target.kind === 'modelDefault'
         || (selectedRow.target.kind === 'systemField' && selectedRow.target.field === 'stream')
         || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'enabled')
       ) {
@@ -854,17 +918,17 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
         return;
       }
 
-      if (selectedRow.target.kind === 'tierProvider' || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'transport')) {
+      if (selectedRow.target.kind === 'modelProvider' || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'transport')) {
         applyCycle(selectedRow.target, 1);
         return;
       }
 
       if (
-        selectedRow.target.kind === 'tierField'
+        selectedRow.target.kind === 'modelField'
         || (selectedRow.target.kind === 'systemField' && selectedRow.target.field !== 'stream')
         || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field !== 'enabled' && selectedRow.target.field !== 'transport')
       ) {
-        startEdit(selectedRow.target as Extract<RowTarget, { kind: 'tierField' | 'systemField' | 'mcpField' }>);
+        startEdit(selectedRow.target as Extract<RowTarget, { kind: 'modelField' | 'systemField' | 'mcpField' }>);
       }
     }
   }, { isActive: true });
@@ -901,7 +965,7 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
       </Box>
 
       <Text bold>设置中心</Text>
-      <Text dimColor>在终端内管理模型配置、系统参数与 MCP 服务器；保存后会尝试热重载。</Text>
+      <Text dimColor>在终端内管理模型池、系统参数与 MCP 服务器；保存后会尝试热重载。</Text>
       <Text color={isDirty ? 'yellow' : 'green'}>
         {isDirty ? '● 有未保存修改' : '✓ 当前草稿已同步'}
         {saving ? '  ·  保存中...' : ''}
@@ -972,7 +1036,7 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
         </Box>
       ) : (
         <Text dimColor>
-          ↑↓ 选择  ←→ 切换枚举  Space 切换布尔  Enter 编辑  A 新增 MCP  D 删除当前 MCP  S 保存  R 重载  Esc 返回
+          ↑↓ 选择  ←→ 切换枚举  Space 切换布尔  Enter 编辑  A 新增当前分区项  D 删除当前模型或 MCP  S 保存  R 重载  Esc 返回
         </Text>
       )}
     </Box>

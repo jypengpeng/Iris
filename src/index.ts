@@ -12,7 +12,6 @@ import type { WebPlatform as WebPlatformType } from './platforms/web';
 
 // LLM
 import { createLLMRouter } from './llm/factory';
-import { LLMTier } from './llm/router';
 import { setRequestLogging } from './llm/transport';
 
 // 存储
@@ -63,6 +62,7 @@ async function main() {
 
   // ---- 1. 创建 LLM 路由器 ----
   const router = createLLMRouter(config.llm);
+  const currentModel = router.getCurrentModelInfo();
 
   // ---- 2. 创建存储 ----
   let storage;
@@ -114,7 +114,7 @@ async function main() {
     for (const t of config.subAgents.types) {
       // 跳过纯记忆类型（allowedTools 全为记忆工具且记忆未启用）
       if (!memory && t.allowedTools?.every(name => MEMORY_TOOLS.has(name))) continue;
-      subAgentTypes.register({ ...t, tier: t.tier as LLMTier });
+      subAgentTypes.register({ ...t });
     }
   } else {
     // 使用内置默认类型
@@ -149,7 +149,7 @@ async function main() {
     autoRecall,
     subAgentGuidance,
     defaultMode,
-    primaryLLMConfig: config.llm.primary,
+    currentLLMConfig: router.getCurrentConfig(),
     ocrService,
   }, memory, modeRegistry);
 
@@ -183,8 +183,8 @@ async function main() {
         authToken: config.platform.web.authToken,
         managementToken: config.platform.web.managementToken,
         configPath: configDir,
-        llmName: config.llm.primary.provider,
-        modelName: config.llm.primary.model,
+        provider: currentModel.provider,
+        modelId: currentModel.modelId,
         streamEnabled: config.system.stream,
       });
       if (mcpManager) webPlatform.setMCPManager(mcpManager);
@@ -197,7 +197,9 @@ async function main() {
       const { ConsolePlatform } = await import('./platforms/console');
       platform = new ConsolePlatform(backend, {
         modeName: defaultMode,
-        contextWindow: config.llm.primary.contextWindow,
+        modelName: currentModel.modelName,
+        modelId: currentModel.modelId,
+        contextWindow: currentModel.contextWindow,
         configDir,
         getMCPManager: () => mcpManager,
         setMCPManager: (manager?: MCPManager) => { mcpManager = manager; },

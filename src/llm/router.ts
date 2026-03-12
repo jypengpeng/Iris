@@ -1,66 +1,131 @@
 /**
- * LLM 三层路由器
+ * LLM 模型路由器
  *
- * 按调用场景分配不同档次的 LLM Provider：
- *   - primary：用户主对话（工具循环第 1 轮）
- *   - secondary：工具循环后续轮次（第 2 轮起）
- *   - light：辅助任务（记忆/摘要等，预留）
- *
- * 回退链：light → secondary → primary
+ * 管理一组按 modelName 注册的模型，并维护当前活动模型。
  */
 
 import { LLMProvider } from './providers/base';
 import { LLMRequest, LLMResponse, LLMStreamChunk } from '../types';
+import { LLMConfig } from '../config/types';
 
-export type LLMTier = 'primary' | 'secondary' | 'light';
+export type LLMModelName = string;
+
+export interface LLMRouterModel {
+  modelName: LLMModelName;
+  provider: LLMProvider;
+  config: LLMConfig;
+}
+
+export interface LLMModelInfo {
+  modelName: LLMModelName;
+  provider: LLMConfig['provider'];
+  /** 提供商真实模型 ID，对应 LLMConfig.model */
+  modelId: string;
+  contextWindow?: number;
+  supportsVision?: boolean;
+  current: boolean;
+}
 
 export interface LLMRouterConfig {
-  primary: LLMProvider;
-  secondary?: LLMProvider;
-  light?: LLMProvider;
+  defaultModelName: LLMModelName;
+  models: LLMRouterModel[];
 }
 
 export class LLMRouter {
-  private providers: LLMRouterConfig;
+  private providers = new Map<LLMModelName, LLMProvider>();
+  private configs = new Map<LLMModelName, LLMConfig>();
+  private order: LLMModelName[] = [];
+  private currentModelName: LLMModelName;
 
   constructor(config: LLMRouterConfig) {
-    this.providers = config;
-  }
-
-  /** 按回退链解析实际 Provider */
-  resolve(tier: LLMTier): LLMProvider {
-    switch (tier) {
-      case 'light':
-        return this.providers.light ?? this.providers.secondary ?? this.providers.primary;
-      case 'secondary':
-        return this.providers.secondary ?? this.providers.primary;
-      case 'primary':
-      default:
-        return this.providers.primary;
+    if (!Array.isArray(config.models) || config.models.length === 0) {
+      throw new Error('LLMRouter 至少需要一个模型');
     }
+
+    for (const entry of config.models) {
+      if (this.providers.has(entry.modelName)) {
+        throw new Error(`LLM 模型名称重复: ${entry.modelName}`);
+      }
+      this.providers.set(entry.modelName, entry.provider);
+      this.configs.set(entry.modelName, entry.config);
+      this.order.push(entry.modelName);
+    }
+
+    this.currentModelName = this.providers.has(config.defaultModelName)
+      ? config.defaultModelName
+      : this.order[0];
   }
 
-  /** 非流式调用（带层级） */
-  async chat(request: LLMRequest, tier: LLMTier = 'primary'): Promise<LLMResponse> {
-    return this.resolve(tier).chat(request);
+  hasModel(modelName: LLMModelName): boolean {
+    return this.providers.has(modelName);
   }
 
-  /** 流式调用（带层级） */
-  async *chatStream(request: LLMRequest, tier: LLMTier = 'primary'): AsyncGenerator<LLMStreamChunk> {
-    yield* this.resolve(tier).chatStream(request);
+  resolve(modelName?: LLMModelName): LLMProvider {
+    const targetName = modelName ?? this.currentModelName;
+    const provider = this.providers.get(targetName);
+    if (!provider) {
+      throw new Error(`LLM 模型未找到: ${targetName}`);
+    }
+    return provider;
   }
 
-  /** 返回 primary 的名称（用于日志和状态展示） */
-  get name(): string {
-    return this.providers.primary.name;
+  getModelConfig(modelName?: LLMModelName): LLMConfig {
+    const targetName = modelName ?? this.currentModelName;
+    const config = this.configs.get(targetName);
+    if (!config) {
+      throw new Error(`LLM 模型未找到: ${targetName}`);
+    }
+    return config;
   }
 
-  /** 返回各层级状态信息 */
-  getTierInfo(): Record<LLMTier, string | null> {
+  getCurrentModelName(): LLMModelName {
+    return this.currentModelName;
+  }
+
+  setCurrentModel(modelName: LLMModelName): LLMModelInfo {
+    if (!this.providers.has(modelName)) {
+      throw new Error(`LLM 模型未找到: ${modelName}`);
+    }
+    this.currentModelName = modelName;
+    return this.getCurrentModelInfo();
+  }
+
+  getCurrentConfig(): LLMConfig {
+    return this.getModelConfig(this.currentModelName);
+  }
+
+  getCurrentModelInfo(): LLMModelInfo {
+    return this.getModelInfo(this.currentModelName);
+  }
+
+  getModelInfo(modelName: LLMModelName): LLMModelInfo {
+    const config = this.getModelConfig(modelName);
     return {
-      primary: this.providers.primary.name,
-      secondary: this.providers.secondary?.name ?? null,
-      light: this.providers.light?.name ?? null,
+      modelName,
+      provider: config.provider,
+      modelId: config.model,
+      contextWindow: config.contextWindow,
+      supportsVision: config.supportsVision,
+      current: modelName === this.currentModelName,
     };
+  }
+
+  listModels(): LLMModelInfo[] {
+    return this.order.map(modelName => this.getModelInfo(modelName));
+  }
+
+  /** 非流式调用（按模型名称，可省略以使用当前模型） */
+  async chat(request: LLMRequest, modelName?: LLMModelName): Promise<LLMResponse> {
+    return this.resolve(modelName).chat(request);
+  }
+
+  /** 流式调用（按模型名称，可省略以使用当前模型） */
+  async *chatStream(request: LLMRequest, modelName?: LLMModelName): AsyncGenerator<LLMStreamChunk> {
+    yield* this.resolve(modelName).chatStream(request);
+  }
+
+  /** 返回当前活动模型名称（用于日志和状态展示） */
+  get name(): string {
+    return this.getCurrentModelInfo().modelName;
   }
 }

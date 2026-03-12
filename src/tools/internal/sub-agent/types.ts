@@ -1,11 +1,9 @@
 /**
  * 子代理类型定义与注册表
  *
- * 定义可用的子代理类型（系统提示词、工具白/黑名单、LLM 层级等），
+ * 定义可用的子代理类型（系统提示词、工具白/黑名单、模型名称等），
  * 主 LLM 通过 sub_agent 工具按类型派生子代理。
  */
-
-import { LLMTier } from '../../../llm/router';
 
 /** 子代理类型配置 */
 export interface SubAgentTypeConfig {
@@ -19,10 +17,10 @@ export interface SubAgentTypeConfig {
   allowedTools?: string[];
   /** 工具黑名单 */
   excludedTools?: string[];
+  /** 固定使用的模型名称；不填时跟随当前活动模型 */
+  modelName?: string;
   /** 当前类型的 sub_agent 调用是否可按 parallel 工具参与调度 */
   parallel: boolean;
-  /** 使用的 LLM 层级 */
-  tier: LLMTier;
   /** 最大工具轮次 */
   maxToolRounds: number;
 }
@@ -61,7 +59,6 @@ export function createDefaultSubAgentTypes(): SubAgentTypeConfig[] {
       systemPrompt: '你是一个通用子代理，负责独立完成委派给你的子任务。请专注于完成任务并返回清晰的结果。',
       excludedTools: ['sub_agent'],
       parallel: false,
-      tier: 'secondary',
       maxToolRounds: 200,
     },
     {
@@ -70,7 +67,6 @@ export function createDefaultSubAgentTypes(): SubAgentTypeConfig[] {
       systemPrompt: '你是一个只读探索代理，负责搜索和阅读信息。不要修改任何文件，只返回你发现的内容。',
       allowedTools: ['read_file', 'terminal'],
       parallel: false,
-      tier: 'light',
       maxToolRounds: 200,
     },
     {
@@ -79,16 +75,23 @@ export function createDefaultSubAgentTypes(): SubAgentTypeConfig[] {
       systemPrompt: '你是一个记忆召回代理。根据给定的查询，从长期记忆中尽可能全面地检索相关信息。\n\n策略：\n1. 先用原始查询搜索\n2. 如果结果不够，提取关键词重新搜索\n3. 尝试相关概念或同义词搜索\n\n将所有找到的记忆整理为清晰的摘要返回。如果没有找到任何相关记忆，明确说明。',
       allowedTools: ['memory_search'],
       parallel: false,
-      tier: 'light',
       maxToolRounds: 3,
     },
   ];
 }
 
+function formatTypeSuffix(type: SubAgentTypeConfig): string {
+  const segments = [type.parallel ? '可并行调度' : '串行调度'];
+  if (type.modelName) {
+    segments.push(`模型名称=${type.modelName}`);
+  }
+  return segments.join('，');
+}
+
 /** 根据注册的类型动态生成协调指导文本，注入系统提示词引导主 LLM 自然委派 */
 export function buildSubAgentGuidance(registry: SubAgentTypeRegistry, hasMemory: boolean): string {
   const typeList = registry.getAll()
-    .map(t => `- **${t.name}**：${t.description}（${t.parallel ? '可并行调度' : '串行调度'}）`)
+    .map(t => `- **${t.name}**：${t.description}（${formatTypeSuffix(t)}）`)
     .join('\n');
 
   let guidance = `\n## 任务委派\n\n你可以使用 sub_agent 工具将子任务委派给专门的子代理。每个子代理拥有独立的上下文和工具，完成后返回结果。\n\n可用的子代理类型：\n${typeList}\n\n使用原则：\n- 简单问题直接回答，不需要子代理\n- 当子任务相对独立时，优先委派给子代理\n- 当需要拆分多个独立子任务时，可以连续调用多个标记为“可并行调度”的子代理类型`;

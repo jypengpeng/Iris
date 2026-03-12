@@ -18,7 +18,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { AppConfig } from './types';
-import { parseTieredLLMConfig } from './llm';
+import { parseLLMConfig } from './llm';
 import { parseOCRConfig } from './ocr';
 import { parsePlatformConfig } from './platform';
 import { parseStorageConfig } from './storage';
@@ -32,7 +32,8 @@ import { loadRawConfigDir } from './raw';
 export type {
   AppConfig,
   LLMConfig,
-  TieredLLMConfig,
+  LLMModelDef,
+  LLMRegistryConfig,
   PlatformConfig,
   StorageConfig,
   SystemConfig,
@@ -68,7 +69,7 @@ export function loadConfig(): AppConfig {
   const data = loadRawConfigDir(configsDir);
 
   return {
-    llm: parseTieredLLMConfig(data.llm),
+    llm: parseLLMConfig(data.llm),
     ocr: parseOCRConfig(data.ocr),
     platform: parsePlatformConfig(data.platform),
     storage: parseStorageConfig(data.storage),

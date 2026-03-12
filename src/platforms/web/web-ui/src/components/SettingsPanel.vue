@@ -21,74 +21,51 @@
           <div class="settings-section-head">
             <div>
               <h3>模型与凭证</h3>
-              <p>配置三层 LLM 路由：Primary 处理首轮对话，Secondary 处理工具后续轮次，Light 预留辅助任务。</p>
+              <p>配置模型池，使用模型名称作为键，默认模型决定启动时的活动模型。</p>
             </div>
             <span class="settings-pill">LLM</span>
           </div>
 
-          <!-- Primary（必填） -->
-          <div class="tier-block">
-            <div class="tier-header" @click="tierOpen.primary = !tierOpen.primary">
-              <span class="tier-arrow" :class="{ open: tierOpen.primary }">▶</span>
-              <span class="tier-label">Primary</span>
-              <span class="tier-desc">主对话 · 首轮</span>
+          <div class="settings-grid two-columns" style="margin-bottom:16px">
+            <div class="form-group">
+              <label>默认模型</label>
+              <select v-model="defaultModelName" :disabled="defaultModelOptions.length === 0">
+                <option v-if="defaultModelOptions.length === 0" value="">请先填写模型名称</option>
+                <option v-for="option in defaultModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+              <p class="field-hint">启动时默认使用这个模型名称。`/model` 也使用这个名称切换。</p>
             </div>
-            <div v-show="tierOpen.primary" class="tier-body">
-              <div class="settings-grid two-columns">
-                <div class="form-group">
-                  <label>LLM 提供商</label>
-                  <select v-model="tiers.primary.provider">
-                    <option value="gemini">Gemini</option>
-                    <option value="openai-compatible">OpenAI 兼容</option>
-                    <option value="openai-responses">OpenAI Responses</option>
-                    <option value="claude">Claude</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label>模型</label>
-                  <div class="inline-field-actions">
-                    <input type="text" v-model="tiers.primary.model" placeholder="例如：gemini-2.0-flash" />
-                    <button class="btn-inline-action" type="button"
-                            :disabled="modelCatalog.primary.loading || (managementEnabled && !managementReady)"
-                            @click="fetchTierModels('primary')">
-                      {{ modelCatalog.primary.loading ? '拉取中...' : '拉取列表' }}
-                    </button>
-                  </div>
-                  <select v-if="modelCatalog.primary.options.length > 0" v-model="tiers.primary.model" class="model-list-select">
-                    <option value="">选择已发现的模型（也可继续手动输入）</option>
-                    <option v-for="option in modelCatalog.primary.options" :key="option.id" :value="option.id">{{ option.label }}</option>
-                  </select>
-                  <p class="field-hint" :class="{ 'model-fetch-error': !!modelCatalog.primary.error }">{{ tierModelHint('primary') }}</p>
-                </div>
-                <div class="form-group full-width">
-                  <label>API Key</label>
-                  <input type="password" v-model="tiers.primary.apiKey" placeholder="输入或保留已有密钥" />
-                  <p class="field-hint">{{ tierKeyHint(tiers.primary.apiKey) }}</p>
-                </div>
-                <div class="form-group full-width">
-                  <label>API 地址</label>
-                  <input type="text" v-model="tiers.primary.baseUrl" placeholder="模型服务请求地址" />
-                </div>
-              </div>
+            <div class="form-group" style="display:flex;align-items:flex-end;justify-content:flex-end">
+              <button class="btn-save" type="button" @click="addModelEntry">新增模型</button>
             </div>
           </div>
 
-          <!-- Secondary（可选） -->
-          <div class="tier-block">
-            <div class="tier-header" @click="tierOpen.secondary = !tierOpen.secondary">
-              <span class="tier-arrow" :class="{ open: tierOpen.secondary }">▶</span>
-              <span class="tier-label">Secondary</span>
-              <span class="tier-desc">工具后续轮次</span>
-              <label class="toggle-switch tier-toggle" @click.stop>
-                <input type="checkbox" v-model="tierEnabled.secondary" />
-                <span class="toggle-switch-ui"></span>
-              </label>
+          <div v-for="(entry, index) in modelEntries" :key="entry.uid" class="tier-block">
+            <div class="tier-header" @click="entry.open = !entry.open">
+              <span class="tier-arrow" :class="{ open: entry.open }">▶</span>
+              <span class="tier-label">{{ entry.modelName || `未命名模型 ${index + 1}` }}</span>
+              <span class="tier-desc">{{ providerLabel(entry.provider) }} · {{ entry.modelId || '未填写模型 ID' }}</span>
+              <span v-if="defaultModelName === entry.modelName && entry.modelName" class="settings-pill" style="margin-left:auto">默认</span>
+              <button
+                class="btn-inline-action"
+                type="button"
+                style="margin-left:8px"
+                :disabled="modelEntries.length <= 1"
+                @click.stop="removeModelEntry(index)"
+              >
+                删除
+              </button>
             </div>
-            <div v-show="tierOpen.secondary && tierEnabled.secondary" class="tier-body">
+            <div v-show="entry.open" class="tier-body">
               <div class="settings-grid two-columns">
                 <div class="form-group">
+                  <label>模型名称</label>
+                  <input type="text" v-model="entry.modelName" placeholder="例如：gemini_flash" />
+                  <p class="field-hint">作为 llm.models 下的键，也作为 `/model` 的切换名称。</p>
+                </div>
+                <div class="form-group">
                   <label>LLM 提供商</label>
-                  <select v-model="tiers.secondary.provider">
+                  <select v-model="entry.provider" @change="handleModelProviderChange(entry)">
                     <option value="gemini">Gemini</option>
                     <option value="openai-compatible">OpenAI 兼容</option>
                     <option value="openai-responses">OpenAI Responses</option>
@@ -96,80 +73,29 @@
                   </select>
                 </div>
                 <div class="form-group">
-                  <label>模型</label>
+                  <label>模型 ID</label>
                   <div class="inline-field-actions">
-                    <input type="text" v-model="tiers.secondary.model" placeholder="例如：gpt-4o" />
+                    <input type="text" v-model="entry.modelId" placeholder="例如：gpt-4o 或 gemini-2.0-flash" />
                     <button class="btn-inline-action" type="button"
-                            :disabled="modelCatalog.secondary.loading || (managementEnabled && !managementReady)"
-                            @click="fetchTierModels('secondary')">
-                      {{ modelCatalog.secondary.loading ? '拉取中...' : '拉取列表' }}
+                            :disabled="entry.modelCatalog.loading || (managementEnabled && !managementReady)"
+                            @click="fetchModelOptions(index)">
+                      {{ entry.modelCatalog.loading ? '拉取中...' : '拉取列表' }}
                     </button>
                   </div>
-                  <select v-if="modelCatalog.secondary.options.length > 0" v-model="tiers.secondary.model" class="model-list-select">
+                  <select v-if="entry.modelCatalog.options.length > 0" v-model="entry.modelId" class="model-list-select">
                     <option value="">选择已发现的模型（也可继续手动输入）</option>
-                    <option v-for="option in modelCatalog.secondary.options" :key="option.id" :value="option.id">{{ option.label }}</option>
+                    <option v-for="option in entry.modelCatalog.options" :key="option.id" :value="option.id">{{ option.label }}</option>
                   </select>
-                  <p class="field-hint" :class="{ 'model-fetch-error': !!modelCatalog.secondary.error }">{{ tierModelHint('secondary') }}</p>
+                  <p class="field-hint" :class="{ 'model-fetch-error': !!entry.modelCatalog.error }">{{ modelCatalogHint(entry) }}</p>
                 </div>
                 <div class="form-group full-width">
                   <label>API Key</label>
-                  <input type="password" v-model="tiers.secondary.apiKey" placeholder="输入或保留已有密钥" />
-                  <p class="field-hint">{{ tierKeyHint(tiers.secondary.apiKey) }}</p>
+                  <input type="password" v-model="entry.apiKey" placeholder="输入或保留已有密钥" />
+                  <p class="field-hint">{{ modelKeyHint(entry) }}</p>
                 </div>
                 <div class="form-group full-width">
                   <label>API 地址</label>
-                  <input type="text" v-model="tiers.secondary.baseUrl" placeholder="模型服务请求地址" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Light（可选） -->
-          <div class="tier-block">
-            <div class="tier-header" @click="tierOpen.light = !tierOpen.light">
-              <span class="tier-arrow" :class="{ open: tierOpen.light }">▶</span>
-              <span class="tier-label">Light</span>
-              <span class="tier-desc">辅助任务（预留）</span>
-              <label class="toggle-switch tier-toggle" @click.stop>
-                <input type="checkbox" v-model="tierEnabled.light" />
-                <span class="toggle-switch-ui"></span>
-              </label>
-            </div>
-            <div v-show="tierOpen.light && tierEnabled.light" class="tier-body">
-              <div class="settings-grid two-columns">
-                <div class="form-group">
-                  <label>LLM 提供商</label>
-                  <select v-model="tiers.light.provider">
-                    <option value="gemini">Gemini</option>
-                    <option value="openai-compatible">OpenAI 兼容</option>
-                    <option value="openai-responses">OpenAI Responses</option>
-                    <option value="claude">Claude</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label>模型</label>
-                  <div class="inline-field-actions">
-                    <input type="text" v-model="tiers.light.model" placeholder="例如：gemini-2.0-flash" />
-                    <button class="btn-inline-action" type="button"
-                            :disabled="modelCatalog.light.loading || (managementEnabled && !managementReady)"
-                            @click="fetchTierModels('light')">
-                      {{ modelCatalog.light.loading ? '拉取中...' : '拉取列表' }}
-                    </button>
-                  </div>
-                  <select v-if="modelCatalog.light.options.length > 0" v-model="tiers.light.model" class="model-list-select">
-                    <option value="">选择已发现的模型（也可继续手动输入）</option>
-                    <option v-for="option in modelCatalog.light.options" :key="option.id" :value="option.id">{{ option.label }}</option>
-                  </select>
-                  <p class="field-hint" :class="{ 'model-fetch-error': !!modelCatalog.light.error }">{{ tierModelHint('light') }}</p>
-                </div>
-                <div class="form-group full-width">
-                  <label>API Key</label>
-                  <input type="password" v-model="tiers.light.apiKey" placeholder="输入或保留已有密钥" />
-                  <p class="field-hint">{{ tierKeyHint(tiers.light.apiKey) }}</p>
-                </div>
-                <div class="form-group full-width">
-                  <label>API 地址</label>
-                  <input type="text" v-model="tiers.light.baseUrl" placeholder="模型服务请求地址" />
+                  <input type="text" v-model="entry.baseUrl" placeholder="模型服务请求地址" />
                 </div>
               </div>
             </div>
@@ -528,17 +454,63 @@ const config = reactive({
 
 const maxToolRoundsInput = ref(String(config.maxToolRounds))
 
-type TierName = 'primary' | 'secondary' | 'light'
-
-interface TierConfig {
-  provider: string
-  apiKey: string
-  model: string
+interface ModelCatalogState {
+  loading: boolean
+  error: string
+  options: ConfigModelOption[]
   baseUrl: string
+  usedStoredApiKey: boolean
 }
 
-function createEmptyTier(provider = 'gemini'): TierConfig {
-  return { provider, apiKey: '', model: '', baseUrl: '' }
+interface ModelEntry {
+  uid: number
+  open: boolean
+  originalModelName: string
+  provider: string
+  apiKey: string
+  modelName: string
+  modelId: string
+  baseUrl: string
+  modelCatalog: ModelCatalogState
+  modelCatalogRequestVersion: number
+  lastProvider: string
+}
+
+let nextModelEntryUid = 1
+
+/** Provider 默认值，与 src/config/llm.ts DEFAULTS 保持一致 */
+const PROVIDER_DEFAULTS: Record<string, { model: string; baseUrl: string }> = {
+  'gemini': { model: 'gemini-2.0-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
+  'openai-compatible': { model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
+  'openai-responses': { model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
+  'claude': { model: 'claude-sonnet-4-6', baseUrl: 'https://api.anthropic.com/v1' },
+}
+
+function createModelCatalogState(): ModelCatalogState {
+  return {
+    loading: false,
+    error: '',
+    options: [],
+    baseUrl: '',
+    usedStoredApiKey: false,
+  }
+}
+
+function createModelEntry(provider = 'gemini', data: Partial<ModelEntry> = {}): ModelEntry {
+  const defaults = PROVIDER_DEFAULTS[provider] ?? { model: '', baseUrl: '' }
+  return {
+    uid: nextModelEntryUid++,
+    open: data.open ?? true,
+    originalModelName: data.originalModelName ?? '',
+    provider,
+    apiKey: data.apiKey ?? '',
+    modelName: data.modelName ?? '',
+    modelId: data.modelId ?? defaults.model,
+    baseUrl: data.baseUrl ?? defaults.baseUrl,
+    modelCatalog: createModelCatalogState(),
+    modelCatalogRequestVersion: 0,
+    lastProvider: provider,
+  }
 }
 
 function clampInteger(value: number, min: number, max: number): number {
@@ -561,87 +533,105 @@ function handleMaxToolRoundsInput(event: Event) {
   }
 }
 
-const tiers = reactive({
-  primary: createEmptyTier(),
-  secondary: createEmptyTier(),
-  light: createEmptyTier(),
-})
-
-const tierEnabled = reactive({ secondary: false, light: false })
-const tierOpen = reactive({ primary: true, secondary: false, light: false })
+const modelEntries = reactive<ModelEntry[]>([createModelEntry()])
+const defaultModelName = ref('')
+const modelOriginalNames = ref<string[]>([])
 
 /** 初始加载完成前抑制 provider watcher 的副作用 */
 let configLoaded = false
 
-/** Provider 默认值，与 src/config/llm.ts DEFAULTS 保持一致 */
-const PROVIDER_DEFAULTS: Record<string, { model: string; baseUrl: string }> = {
-  'gemini': { model: 'gemini-2.0-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
-  'openai-compatible': { model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
-  'openai-responses': { model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
-  'claude': { model: 'claude-sonnet-4-6', baseUrl: 'https://api.anthropic.com/v1' },
+function providerLabel(provider: string): string {
+  const map: Record<string, string> = {
+    gemini: 'Gemini',
+    'openai-compatible': 'OpenAI 兼容',
+    'openai-responses': 'OpenAI Responses',
+    claude: 'Claude',
+  }
+  return map[provider] || provider
 }
 
-/** 切换 Provider 时自动填充默认值（仅在用户手动操作时生效） */
-function watchTierProvider(tier: TierConfig) {
-  watch(() => tier.provider, (newProvider, oldProvider) => {
-    if (!configLoaded) return
-    if (newProvider === oldProvider) return
-    const oldDefaults = PROVIDER_DEFAULTS[oldProvider] ?? { model: '', baseUrl: '' }
-    const newDefaults = PROVIDER_DEFAULTS[newProvider] ?? { model: '', baseUrl: '' }
-    if (!tier.model || tier.model === oldDefaults.model) tier.model = newDefaults.model
-    if (!tier.baseUrl || tier.baseUrl === oldDefaults.baseUrl) tier.baseUrl = newDefaults.baseUrl
-    if (tier.apiKey.startsWith('****')) tier.apiKey = ''
-  })
-}
-watchTierProvider(tiers.primary)
-watchTierProvider(tiers.secondary)
-watchTierProvider(tiers.light)
+const defaultModelOptions = computed(() => {
+  return modelEntries
+    .map((entry, index) => {
+      const value = entry.modelName.trim()
+      return {
+        value,
+        label: value || `未命名模型 ${index + 1}`,
+      }
+    })
+    .filter(option => !!option.value)
+})
 
-interface TierModelCatalogState {
-  loading: boolean
-  error: string
-  options: ConfigModelOption[]
-  baseUrl: string
-  usedStoredApiKey: boolean
+function syncDefaultModelName(newNames: string[], oldNames: string[] = []) {
+  const normalizedNewNames = newNames.map(name => name.trim())
+  if (normalizedNewNames.every(name => !name)) {
+    defaultModelName.value = ''
+    return
+  }
+
+  const current = defaultModelName.value.trim()
+  if (current && normalizedNewNames.includes(current)) {
+    defaultModelName.value = current
+    return
+  }
+
+  const renamedIndex = oldNames.findIndex(name => name === current)
+  if (renamedIndex >= 0 && normalizedNewNames[renamedIndex]) {
+    defaultModelName.value = normalizedNewNames[renamedIndex]
+    return
+  }
+
+  defaultModelName.value = normalizedNewNames.find(Boolean) || ''
 }
 
-function createTierModelCatalogState(): TierModelCatalogState {
-  return {
-    loading: false,
-    error: '',
-    options: [],
-    baseUrl: '',
-    usedStoredApiKey: false,
+watch(
+  () => modelEntries.map(entry => entry.modelName.trim()),
+  (newNames, oldNames) => {
+    syncDefaultModelName(newNames, oldNames ?? [])
+  },
+)
+
+function addModelEntry() {
+  modelEntries.push(createModelEntry())
+}
+
+function removeModelEntry(index: number) {
+  if (modelEntries.length <= 1) return
+  const [removed] = modelEntries.splice(index, 1)
+  if (removed && defaultModelName.value === removed.modelName.trim()) {
+    syncDefaultModelName(modelEntries.map(entry => entry.modelName.trim()))
   }
 }
 
-const modelCatalog = reactive<Record<TierName, TierModelCatalogState>>({
-  primary: createTierModelCatalogState(),
-  secondary: createTierModelCatalogState(),
-  light: createTierModelCatalogState(),
-})
-
-const modelCatalogRequestVersion = reactive<Record<TierName, number>>({ primary: 0, secondary: 0, light: 0 })
-
-function resetTierModelCatalog(tierName: TierName) {
-  modelCatalogRequestVersion[tierName] += 1
-  Object.assign(modelCatalog[tierName], createTierModelCatalogState())
+function resetModelCatalog(entry: ModelEntry) {
+  entry.modelCatalogRequestVersion += 1
+  Object.assign(entry.modelCatalog, createModelCatalogState())
 }
 
-function tierKeyHint(apiKey: string): string {
-  if (!apiKey) return '未配置 API Key。'
-  if (apiKey.startsWith('****')) return '已读取已保存密钥，保持不变则不会覆盖。'
+function handleModelProviderChange(entry: ModelEntry) {
+  const oldDefaults = PROVIDER_DEFAULTS[entry.lastProvider] ?? { model: '', baseUrl: '' }
+  const newDefaults = PROVIDER_DEFAULTS[entry.provider] ?? { model: '', baseUrl: '' }
+  if (!entry.modelId || entry.modelId === oldDefaults.model) entry.modelId = newDefaults.model
+  if (!entry.baseUrl || entry.baseUrl === oldDefaults.baseUrl) entry.baseUrl = newDefaults.baseUrl
+  if (entry.apiKey.startsWith('****')) entry.apiKey = ''
+  entry.lastProvider = entry.provider
+  resetModelCatalog(entry)
+}
+
+function modelKeyHint(entry: ModelEntry): string {
+  if (!entry.apiKey) return '未配置 API Key。'
+  if (entry.apiKey.startsWith('****')) return '已读取已保存密钥，保持不变则不会覆盖。'
   return '将使用当前输入的密钥保存配置。'
 }
 
-function tierModelHint(tierName: TierName): string {
-  const state = modelCatalog[tierName]
+function modelCatalogHint(entry: ModelEntry): string {
+  const state = entry.modelCatalog
   if (state.error) return state.error
   if (managementEnabled.value && !managementReady.value) return '管理令牌未解锁，暂时无法拉取模型列表。'
   if (state.options.length > 0) {
     return `已从 ${state.baseUrl} 拉取 ${state.options.length} 个模型${state.usedStoredApiKey ? '（使用已保存 API Key）' : ''}。也可继续手动输入。`
   }
-  return '填写 API 地址与 Key 后，可拉取模型列表，也可继续手动输入模型名称。'
+  return '填写 API 地址与 Key 后，可拉取模型列表，也可继续手动输入模型 ID。'
 }
 
 function normalizeApiKeyForLookup(apiKey: string): string | undefined {
@@ -650,54 +640,51 @@ function normalizeApiKeyForLookup(apiKey: string): string | undefined {
   return trimmed
 }
 
-async function fetchTierModels(tierName: TierName) {
-  const tier = tiers[tierName]
-  const state = modelCatalog[tierName]
-  const requestVersion = ++modelCatalogRequestVersion[tierName]
+async function fetchModelOptions(index: number) {
+  const entry = modelEntries[index]
+  if (!entry) return
+  const state = entry.modelCatalog
+  const requestVersion = ++entry.modelCatalogRequestVersion
 
   state.loading = true
   state.error = ''
 
   try {
     const result = await fetchConfigModels({
-      tier: tierName,
-      provider: tier.provider,
-      baseUrl: tier.baseUrl,
-      apiKey: normalizeApiKeyForLookup(tier.apiKey),
+      modelName: entry.modelName.trim() || undefined,
+      provider: entry.provider,
+      baseUrl: entry.baseUrl,
+      apiKey: normalizeApiKeyForLookup(entry.apiKey),
     })
 
-    if (requestVersion !== modelCatalogRequestVersion[tierName]) return
+    if (requestVersion !== entry.modelCatalogRequestVersion) return
 
     state.options = result.models
     state.baseUrl = result.baseUrl
     state.usedStoredApiKey = result.usedStoredApiKey
 
     if (result.models.length === 0) {
-      state.error = '接口已连接，但没有返回可用模型。你仍可手动输入模型名称。'
+      state.error = '接口已连接，但没有返回可用模型。你仍可手动输入模型 ID。'
       return
     }
 
-    if (!tier.model) {
-      tier.model = result.models[0].id
+    if (!entry.modelId) {
+      entry.modelId = result.models[0].id
     }
   } catch (err: any) {
-    if (requestVersion !== modelCatalogRequestVersion[tierName]) return
+    if (requestVersion !== entry.modelCatalogRequestVersion) return
     state.error = '拉取失败：' + (err?.message || '未知错误')
   } finally {
-    if (requestVersion === modelCatalogRequestVersion[tierName]) {
+    if (requestVersion === entry.modelCatalogRequestVersion) {
       state.loading = false
     }
   }
 }
 
-function watchTierModelCatalogInvalidation(tierName: TierName, tier: TierConfig) {
-  watch([() => tier.provider, () => tier.baseUrl, () => tier.apiKey], () => {
-    resetTierModelCatalog(tierName)
-  })
-}
-watchTierModelCatalogInvalidation('primary', tiers.primary)
-watchTierModelCatalogInvalidation('secondary', tiers.secondary)
-watchTierModelCatalogInvalidation('light', tiers.light)
+watch(() => JSON.stringify(modelEntries.map(entry => ({ provider: entry.provider, baseUrl: entry.baseUrl, apiKey: entry.apiKey, modelName: entry.modelName }))), () => {
+  if (!configLoaded) return
+  modelEntries.forEach(entry => resetModelCatalog(entry))
+})
 
 const tools = ref<string[]>([])
 const statusText = ref('')
@@ -914,47 +901,47 @@ watch(
     () => config.systemPrompt,
     () => config.maxToolRounds,
     () => config.stream,
-    () => JSON.stringify(tiers),
-    () => JSON.stringify(tierEnabled),
+    () => defaultModelName.value,
+    () => JSON.stringify(modelEntries.map(entry => ({ modelName: entry.modelName, provider: entry.provider, apiKey: entry.apiKey, modelId: entry.modelId, baseUrl: entry.baseUrl }))),
     // 排除 open（纯 UI 状态）
     () => JSON.stringify(mcpServers, (key, value) => (key === 'open' || key === 'timeoutInput') ? undefined : value),
   ],
   scheduleAutoSave,
 )
 
-/** 从服务端数据加载单个层级配置 */
-function loadTierFromData(tier: TierConfig, data: any) {
-  if (!data) return
-  // 先设 apiKey/model/baseUrl，最后设 provider —— 因为 provider 的 watcher 会检查这些字段
-  tier.apiKey = data.apiKey || ''
-  tier.model = data.model || ''
-  tier.baseUrl = data.baseUrl || ''
-  tier.provider = data.provider || 'gemini'
+function loadModelEntriesFromConfig(llm: any) {
+  modelEntries.splice(0, modelEntries.length)
+  modelOriginalNames.value = []
+
+  if (llm?.models && typeof llm.models === 'object' && !Array.isArray(llm.models)) {
+    for (const [name, cfg] of Object.entries(llm.models) as [string, any][]) {
+      if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) continue
+      const provider = typeof cfg.provider === 'string' ? cfg.provider : 'gemini'
+      modelEntries.push(createModelEntry(provider, {
+        originalModelName: name,
+        modelName: name,
+        apiKey: cfg.apiKey || '',
+        modelId: cfg.model || '',
+        baseUrl: cfg.baseUrl || '',
+        open: name === llm.defaultModel,
+      }))
+      modelOriginalNames.value.push(name)
+    }
+  }
+
+  if (modelEntries.length === 0) {
+    modelEntries.push(createModelEntry())
+  }
+
+  defaultModelName.value = typeof llm?.defaultModel === 'string' ? llm.defaultModel.trim() : ''
+  syncDefaultModelName(modelEntries.map(entry => entry.modelName.trim()))
 }
 
 onMounted(async () => {
   try {
     refreshManagementState()
     const data = await getConfig()
-    const llm = data.llm || {}
-
-    // 支持三层格式和旧扁平格式
-    if (llm.primary) {
-      loadTierFromData(tiers.primary, llm.primary)
-      if (llm.secondary) {
-        loadTierFromData(tiers.secondary, llm.secondary)
-        tierEnabled.secondary = true
-        tierOpen.secondary = true
-      }
-      if (llm.light) {
-        loadTierFromData(tiers.light, llm.light)
-        tierEnabled.light = true
-        tierOpen.light = true
-      }
-    } else if (llm.provider) {
-      // 旧扁平格式兼容
-      loadTierFromData(tiers.primary, llm)
-    }
+    loadModelEntriesFromConfig(data.llm || {})
 
     config.systemPrompt = data.system?.systemPrompt || ''
     config.maxToolRounds = data.system?.maxToolRounds ?? 10
@@ -1003,17 +990,60 @@ onMounted(async () => {
   }
 })
 
-/** 构建单个层级的保存 payload（跳过脱敏 apiKey） */
-function buildTierPayload(tier: TierConfig): Record<string, unknown> {
+function buildModelEntryPayload(entry: ModelEntry): Record<string, unknown> {
   const payload: Record<string, unknown> = {
-    provider: tier.provider,
-    model: tier.model,
-    baseUrl: tier.baseUrl,
+    provider: entry.provider,
+    model: entry.modelId,
+    baseUrl: entry.baseUrl,
   }
-  if (tier.apiKey && !tier.apiKey.startsWith('****')) {
-    payload.apiKey = tier.apiKey
+  if (entry.apiKey && !entry.apiKey.startsWith('****')) {
+    payload.apiKey = entry.apiKey
   }
   return payload
+}
+
+function validateModelEntries(): string | null {
+  if (modelEntries.length === 0) return '至少需要保留一个模型'
+
+  const names = new Set<string>()
+  for (const entry of modelEntries) {
+    const modelName = entry.modelName.trim()
+    if (!modelName) return '模型名称不能为空'
+    if (names.has(modelName)) return `模型名称重复：${modelName}`
+    if (!entry.modelId.trim()) return `模型「${modelName}」缺少模型 ID`
+    names.add(modelName)
+  }
+
+  if (!defaultModelName.value.trim()) return '默认模型不能为空'
+  if (!names.has(defaultModelName.value.trim())) return `默认模型不存在：${defaultModelName.value}`
+
+  return null
+}
+
+function buildLLMPayload(): { payload: Record<string, unknown>; currentNames: string[] } {
+  const models: Record<string, unknown> = {}
+
+  for (const originalName of modelOriginalNames.value) {
+    if (!modelEntries.some(entry => entry.modelName.trim() === originalName)) {
+      models[originalName] = null
+    }
+  }
+
+  const currentNames: string[] = []
+  for (const entry of modelEntries) {
+    const modelName = entry.modelName.trim()
+    if (!modelName) continue
+    currentNames.push(modelName)
+    if (entry.originalModelName && entry.originalModelName !== modelName) {
+      models[entry.originalModelName] = null
+    }
+    models[modelName] = buildModelEntryPayload(entry)
+  }
+
+  return {
+    payload: { defaultModel: defaultModelName.value.trim(), models },
+    currentNames,
+  }
 }
 
 async function handleSave() {
@@ -1036,13 +1066,16 @@ async function handleSave() {
     return
   }
 
+  const modelValidationError = validateModelEntries()
+  if (modelValidationError) {
+    statusText.value = '保存失败: ' + modelValidationError
+    statusError.value = true
+    saving.value = false
+    return
+  }
+
   try {
-    const llmPayload: Record<string, unknown> = {
-      primary: buildTierPayload(tiers.primary),
-      // 禁用时显式发送 null，让 deepMerge 删除旧值
-      secondary: tierEnabled.secondary ? buildTierPayload(tiers.secondary) : null,
-      light: tierEnabled.light ? buildTierPayload(tiers.light) : null,
-    }
+    const { payload: llmPayload, currentNames: currentModelNames } = buildLLMPayload()
 
     const { payload: mcpPayload, currentNames } = buildMCPPayload()
     const payload: Record<string, any> = {
@@ -1061,8 +1094,13 @@ async function handleSave() {
     if (result.ok) {
       statusText.value = result.restartRequired ? '已保存，需要重启生效' : '已保存并生效'
       statusError.value = false
+      modelOriginalNames.value = currentModelNames
       mcpOriginalNames.value = currentNames
       dirty.value = false
+      for (const entry of modelEntries) {
+        entry.originalModelName = entry.modelName.trim()
+      }
+
       // 热重载后刷新工具列表（MCP 开关会影响工具数量）
       try {
         const st = await getStatus()

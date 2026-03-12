@@ -147,7 +147,7 @@ export async function updateConfig(data: any): Promise<{ ok: boolean; restartReq
 }
 
 export async function fetchConfigModels(data: {
-  tier: 'primary' | 'secondary' | 'light'
+  modelName?: string
   provider: string
   baseUrl: string
   apiKey?: string

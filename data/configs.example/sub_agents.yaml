@@ -2,7 +2,7 @@
 # 自定义子代理类型和行为，留空或省略则使用内置默认配置
 
 # 子代理类型定义
-# 每种类型有独立的系统提示词、工具策略、并行调度策略和 LLM 层级
+# 每种类型有独立的系统提示词、工具策略、并行调度策略和固定模型选择策略
 # 提供 types 时将完全替代内置默认类型
 #
 # 字段说明：
@@ -10,9 +10,9 @@
 #   systemPrompt  - 子代理的系统提示词
 #   allowedTools  - 工具白名单（与 excludedTools 互斥，优先）
 #   excludedTools - 工具黑名单
+#   modelName     - 固定使用的模型名称；不写时跟随当前活动模型
 #   parallel      - 当前类型的 sub_agent 调用是否按 parallel 工具参与调度（默认 false）
 #                   不写就是 false，只有显式写 true 才会参与并行调度
-#   tier          - 使用的 LLM 层级：primary / secondary / light
 #   maxToolRounds - 最大工具执行轮次
 #
 # 以下为内置默认配置，取消注释即可自定义：
@@ -24,7 +24,7 @@
 #     excludedTools:
 #       - sub_agent
 #     parallel: false
-#     tier: secondary
+#     # modelName: gemini_flash
 #     maxToolRounds: 200
 #
 #   explore:
@@ -34,7 +34,7 @@
 #       - read_file
 #       - terminal
 #     parallel: false
-#     tier: light
+#     # modelName: gpt4o_mini
 #     maxToolRounds: 200
 #
 #   recall:
@@ -51,5 +51,5 @@
 #     allowedTools:
 #       - memory_search
 #     parallel: false
-#     tier: light
+#     # modelName: recall_model
 #     maxToolRounds: 3

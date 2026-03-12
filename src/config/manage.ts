@@ -17,18 +17,20 @@ export function isMasked(value: string): boolean {
   return typeof value === 'string' && value.startsWith('****');
 }
 
+function sanitizeLLMConfig(result: any): void {
+  if (result.llm?.models && typeof result.llm.models === 'object') {
+    for (const model of Object.values(result.llm.models) as any[]) {
+      if (model?.apiKey) {
+        model.apiKey = maskSensitive(String(model.apiKey));
+      }
+    }
+  }
+}
+
 export function sanitizeConfig(data: any): any {
   const result = JSON.parse(JSON.stringify(data ?? {}));
 
-  for (const tier of ['primary', 'secondary', 'light']) {
-    if (result.llm?.[tier]?.apiKey) {
-      result.llm[tier].apiKey = maskSensitive(String(result.llm[tier].apiKey));
-    }
-  }
-
-  if (result.llm?.apiKey) {
-    result.llm.apiKey = maskSensitive(String(result.llm.apiKey));
-  }
+  sanitizeLLMConfig(result);
 
   if (result.ocr?.apiKey) {
     result.ocr.apiKey = maskSensitive(String(result.ocr.apiKey));
@@ -110,14 +112,25 @@ export function deepMerge(target: any, source: any): any {
 function normalizeMergedConfig(data: any): any {
   const merged = JSON.parse(JSON.stringify(data ?? {}));
 
-  if (merged.llm?.primary && merged.llm?.provider) {
-    if (!merged.llm.primary.apiKey && merged.llm.apiKey) {
-      merged.llm.primary.apiKey = merged.llm.apiKey;
-    }
+  if (merged.llm?.models && typeof merged.llm.models === 'object' && !Array.isArray(merged.llm.models)) {
     delete merged.llm.provider;
     delete merged.llm.apiKey;
     delete merged.llm.model;
     delete merged.llm.baseUrl;
+    delete merged.llm.primary;
+    delete merged.llm.secondary;
+    delete merged.llm.light;
+
+    const modelNames = Object.keys(merged.llm.models).filter(modelName => {
+      const model = merged.llm.models[modelName];
+      return model && typeof model === 'object' && !Array.isArray(model);
+    });
+
+    if (modelNames.length === 0) {
+      delete merged.llm;
+    } else if (!merged.llm.defaultModel || !merged.llm.models[merged.llm.defaultModel]) {
+      merged.llm.defaultModel = modelNames[0];
+    }
   }
 
   if (!merged.mcp?.servers || typeof merged.mcp.servers !== 'object' || Object.keys(merged.mcp.servers).length === 0) {

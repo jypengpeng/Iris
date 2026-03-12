@@ -33,8 +33,9 @@ export interface WebPlatformConfig {
   authToken?: string;
   managementToken?: string;
   configPath: string;
-  llmName: string;
-  modelName: string;
+  /** 当前活动模型的提供商名称（如 gemini / openai-compatible / claude） */
+  provider: string;
+  modelId: string;
   streamEnabled: boolean;
 }
 
@@ -284,8 +285,8 @@ export class WebPlatform extends PlatformAdapter {
         mergedConfig,
       );
 
-      this.config.llmName = summary.llmName;
-      this.config.modelName = summary.modelName;
+      this.config.provider = summary.provider;
+      this.config.modelId = summary.modelId;
       this.config.streamEnabled = summary.streamEnabled;
     });
     this.router.get('/api/config', config.get);
@@ -295,8 +296,8 @@ export class WebPlatform extends PlatformAdapter {
     // 状态 API
     this.router.get('/api/status', async (_req, res) => {
       sendJSON(res, 200, {
-        provider: this.config.llmName,
-        model: this.config.modelName,
+        provider: this.config.provider,
+        model: this.config.modelId,
         tools: this.backend.getToolNames(),
         stream: this.config.streamEnabled,
         authProtected: !!this.config.authToken,

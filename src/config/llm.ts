@@ -2,7 +2,9 @@
  * LLM 配置解析
  */
 
-import { LLMConfig, TieredLLMConfig } from './types';
+import { LLMConfig, LLMModelDef, LLMRegistryConfig } from './types';
+
+export const DEFAULT_MODEL_NAME = 'default';
 
 export const DEFAULTS: Record<string, Partial<LLMConfig> & { contextWindow?: number }> = {
   'gemini': {
@@ -44,26 +46,60 @@ export function parseSingleLLMConfig(raw: any = {}): LLMConfig {
   };
 }
 
-/** 解析三层 LLM 配置 */
-export function parseTieredLLMConfig(raw: any = {}): TieredLLMConfig {
-  // 新格式优先（有 primary 字段），再兼容旧扁平格式
-  if (raw.primary) {
-    // 迁移兼容：旧格式的 apiKey 在顶层，deepMerge 后残留；若 primary 内无 apiKey 则继承
-    const primaryRaw = !raw.primary.apiKey && raw.apiKey
-      ? { ...raw.primary, apiKey: raw.apiKey }
-      : raw.primary;
-    const result: TieredLLMConfig = {
-      primary: parseSingleLLMConfig(primaryRaw),
-    };
-    if (raw.secondary) {
-      result.secondary = parseSingleLLMConfig(raw.secondary);
+function normalizeModelName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function toModelDef(modelName: string, raw: any): LLMModelDef {
+  return {
+    modelName,
+    ...parseSingleLLMConfig(raw),
+  };
+}
+
+function hasObjectModels(raw: any): boolean {
+  return !!raw?.models && typeof raw.models === 'object' && !Array.isArray(raw.models);
+}
+
+function hasLegacyLLMShape(raw: any): boolean {
+  if (!raw || typeof raw !== 'object') return false;
+  return !!(
+    raw.primary
+    || raw.secondary
+    || raw.light
+    || raw.provider
+    || raw.apiKey
+    || raw.model
+    || raw.baseUrl
+  );
+}
+
+/** 解析模型池配置 */
+export function parseLLMConfig(raw: any = {}): LLMRegistryConfig {
+  if (hasObjectModels(raw)) {
+    const models = Object.entries(raw.models)
+      .map(([modelName, value]) => ({ modelName: normalizeModelName(modelName), value }))
+      .filter(({ modelName, value }) => !!modelName && value && typeof value === 'object' && !Array.isArray(value))
+      .map(({ modelName, value }) => toModelDef(modelName!, value));
+
+    if (models.length > 0) {
+      const modelNames = new Set(models.map(model => model.modelName));
+      const requestedDefault = normalizeModelName(raw.defaultModel);
+      return {
+        defaultModelName: requestedDefault && modelNames.has(requestedDefault) ? requestedDefault : models[0].modelName,
+        models,
+      };
     }
-    if (raw.light) {
-      result.light = parseSingleLLMConfig(raw.light);
-    }
-    return result;
   }
 
-  // 旧扁平格式（直接有 provider 字段）
-  return { primary: parseSingleLLMConfig(raw) };
+  if (hasLegacyLLMShape(raw)) {
+    throw new Error('llm.yaml 已不再支持旧格式。请改用 defaultModel + models.<modelName>。');
+  }
+
+  return {
+    defaultModelName: DEFAULT_MODEL_NAME,
+    models: [toModelDef(DEFAULT_MODEL_NAME, {})],
+  };
 }

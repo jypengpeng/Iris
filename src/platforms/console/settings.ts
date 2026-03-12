@@ -3,9 +3,8 @@
  */
 
 import { Backend } from '../../core/backend';
-import { DEFAULTS, parseTieredLLMConfig } from '../../config/llm';
+import { DEFAULTS, parseLLMConfig } from '../../config/llm';
 import { parseSystemConfig } from '../../config/system';
-import { LLMConfig } from '../../config/types';
 import { isMasked, readEditableConfig, updateEditableConfig } from '../../config/manage';
 import { applyRuntimeConfigReload } from '../../config/runtime';
 import { MCPManager, MCPServerInfo } from '../../mcp';
@@ -25,12 +24,14 @@ export const CONSOLE_MCP_TRANSPORT_OPTIONS = [
 
 export type ConsoleLLMProvider = typeof CONSOLE_LLM_PROVIDER_OPTIONS[number];
 export type ConsoleMCPTransport = typeof CONSOLE_MCP_TRANSPORT_OPTIONS[number];
-export type ConsoleTierName = 'primary' | 'secondary' | 'light';
 
-export interface ConsoleTierSettings {
+export interface ConsoleModelSettings {
+  modelName: string;
+  originalModelName?: string;
   provider: ConsoleLLMProvider;
   apiKey: string;
-  model: string;
+  /** 提供商真实模型 ID，对应 LLMConfig.model */
+  modelId: string;
   baseUrl: string;
 }
 
@@ -48,15 +49,9 @@ export interface ConsoleMCPServerSettings {
 }
 
 export interface ConsoleSettingsSnapshot {
-  tiers: {
-    primary: ConsoleTierSettings;
-    secondary: ConsoleTierSettings;
-    light: ConsoleTierSettings;
-  };
-  tierEnabled: {
-    secondary: boolean;
-    light: boolean;
-  };
+  models: ConsoleModelSettings[];
+  modelOriginalNames: string[];
+  defaultModelName: string;
   system: {
     systemPrompt: string;
     maxToolRounds: number;
@@ -92,32 +87,34 @@ function sanitizeServerName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
-function createEmptyTier(provider: ConsoleLLMProvider = 'gemini'): ConsoleTierSettings {
+export function createEmptyModel(provider: ConsoleLLMProvider = 'gemini', modelName: string = ''): ConsoleModelSettings {
   const defaults = DEFAULTS[provider] ?? DEFAULTS.gemini;
   return {
+    modelName,
     provider,
     apiKey: '',
-    model: defaults.model ?? '',
+    modelId: defaults.model ?? '',
     baseUrl: defaults.baseUrl ?? '',
   };
 }
 
-export function applyTierProviderChange(
-  tier: ConsoleTierSettings,
+export function applyModelProviderChange(
+  model: ConsoleModelSettings,
   nextProvider: ConsoleLLMProvider,
-): ConsoleTierSettings {
-  const oldDefaults = DEFAULTS[tier.provider] ?? {};
+): ConsoleModelSettings {
+  const oldDefaults = DEFAULTS[model.provider] ?? {};
   const newDefaults = DEFAULTS[nextProvider] ?? {};
 
   return {
+    ...model,
     provider: nextProvider,
-    apiKey: tier.apiKey.startsWith('****') ? '' : tier.apiKey,
-    model: !tier.model || tier.model === oldDefaults.model
-      ? newDefaults.model ?? tier.model
-      : tier.model,
-    baseUrl: !tier.baseUrl || tier.baseUrl === oldDefaults.baseUrl
-      ? newDefaults.baseUrl ?? tier.baseUrl
-      : tier.baseUrl,
+    apiKey: model.apiKey.startsWith('****') ? '' : model.apiKey,
+    modelId: !model.modelId || model.modelId === oldDefaults.model
+      ? newDefaults.model ?? model.modelId
+      : model.modelId,
+    baseUrl: !model.baseUrl || model.baseUrl === oldDefaults.baseUrl
+      ? newDefaults.baseUrl ?? model.baseUrl
+      : model.baseUrl,
   };
 }
 
@@ -139,15 +136,15 @@ export function cloneConsoleSettingsSnapshot(snapshot: ConsoleSettingsSnapshot):
   return JSON.parse(JSON.stringify(snapshot)) as ConsoleSettingsSnapshot;
 }
 
-function buildTierPayload(tier: ConsoleTierSettings): Record<string, unknown> {
+function buildModelPayload(model: ConsoleModelSettings): Record<string, unknown> {
   const payload: Record<string, unknown> = {
-    provider: tier.provider,
-    model: tier.model,
-    baseUrl: tier.baseUrl,
+    provider: model.provider,
+    model: model.modelId,
+    baseUrl: model.baseUrl,
   };
 
-  if (tier.apiKey && !tier.apiKey.startsWith('****')) {
-    payload.apiKey = tier.apiKey;
+  if (model.apiKey && !model.apiKey.startsWith('****')) {
+    payload.apiKey = model.apiKey;
   }
 
   return payload;
@@ -156,6 +153,32 @@ function buildTierPayload(tier: ConsoleTierSettings): Record<string, unknown> {
 function validateSnapshot(snapshot: ConsoleSettingsSnapshot): string | null {
   if (!Number.isFinite(snapshot.system.maxToolRounds) || snapshot.system.maxToolRounds < 1 || snapshot.system.maxToolRounds > 2000) {
     return '工具最大轮次必须在 1 到 2000 之间';
+  }
+
+  if (!Array.isArray(snapshot.models) || snapshot.models.length === 0) {
+    return '至少需要保留一个模型';
+  }
+
+  const modelNames = new Set<string>();
+  for (const model of snapshot.models) {
+    const modelName = model.modelName.trim();
+    if (!modelName) {
+      return '模型名称不能为空';
+    }
+    if (modelNames.has(modelName)) {
+      return `模型名称 "${modelName}" 重复`;
+    }
+    if (!model.modelId.trim()) {
+      return `模型 "${modelName}" 缺少模型 ID`;
+    }
+    modelNames.add(modelName);
+  }
+
+  if (!snapshot.defaultModelName.trim()) {
+    return '默认模型名称不能为空';
+  }
+  if (!modelNames.has(snapshot.defaultModelName.trim())) {
+    return `默认模型 "${snapshot.defaultModelName}" 不存在`;
   }
 
   const names = new Set<string>();
@@ -193,6 +216,32 @@ function validateSnapshot(snapshot: ConsoleSettingsSnapshot): string | null {
   return null;
 }
 
+function buildLLMPayload(snapshot: ConsoleSettingsSnapshot): { defaultModel: string; models: Record<string, any> } {
+  const models: Record<string, any> = {};
+
+  for (const originalName of snapshot.modelOriginalNames) {
+    if (!snapshot.models.some(model => model.modelName.trim() === originalName)) {
+      models[originalName] = null;
+    }
+  }
+
+  for (const model of snapshot.models) {
+    const modelName = model.modelName.trim();
+    if (!modelName) continue;
+
+    if (model.originalModelName && model.originalModelName !== modelName) {
+      models[model.originalModelName] = null;
+    }
+
+    models[modelName] = buildModelPayload(model);
+  }
+
+  return {
+    defaultModel: snapshot.defaultModelName.trim(),
+    models,
+  };
+}
+
 function buildMCPPayload(snapshot: ConsoleSettingsSnapshot): { servers: Record<string, any> } | null {
   const servers: Record<string, any> = {};
 
@@ -223,8 +272,13 @@ function buildMCPPayload(snapshot: ConsoleSettingsSnapshot): { servers: Record<s
         .map(arg => arg.trim())
         .filter(Boolean);
       entry.cwd = server.cwd.trim() ? server.cwd.trim() : null;
+      entry.url = null;
+      entry.headers = null;
     } else {
       entry.url = server.url.trim();
+      entry.command = null;
+      entry.args = null;
+      entry.cwd = null;
       if (server.authHeader.trim() && !isMasked(server.authHeader.trim())) {
         entry.headers = { Authorization: server.authHeader.trim() };
       } else if (!server.authHeader.trim()) {
@@ -253,41 +307,23 @@ export class ConsoleSettingsController {
 
   async loadSnapshot(): Promise<ConsoleSettingsSnapshot> {
     const data = readEditableConfig(this.configDir);
-    const llm = parseTieredLLMConfig(data.llm);
+    const llm = parseLLMConfig(data.llm);
     const system = parseSystemConfig(data.system);
     const rawMcpServers = data.mcp?.servers && typeof data.mcp.servers === 'object'
       ? data.mcp.servers as Record<string, any>
       : {};
 
     return {
-      tiers: {
-        primary: {
-          provider: llm.primary.provider,
-          apiKey: llm.primary.apiKey,
-          model: llm.primary.model,
-          baseUrl: llm.primary.baseUrl,
-        },
-        secondary: llm.secondary
-          ? {
-            provider: llm.secondary.provider,
-            apiKey: llm.secondary.apiKey,
-            model: llm.secondary.model,
-            baseUrl: llm.secondary.baseUrl,
-          }
-          : createEmptyTier(),
-        light: llm.light
-          ? {
-            provider: llm.light.provider,
-            apiKey: llm.light.apiKey,
-            model: llm.light.model,
-            baseUrl: llm.light.baseUrl,
-          }
-          : createEmptyTier(),
-      },
-      tierEnabled: {
-        secondary: !!data.llm?.secondary,
-        light: !!data.llm?.light,
-      },
+      models: llm.models.map(model => ({
+        modelName: model.modelName,
+        originalModelName: model.modelName,
+        provider: model.provider,
+        apiKey: model.apiKey,
+        modelId: model.model,
+        baseUrl: model.baseUrl,
+      })),
+      modelOriginalNames: llm.models.map(model => model.modelName),
+      defaultModelName: llm.defaultModelName,
       system: {
         systemPrompt: system.systemPrompt,
         maxToolRounds: system.maxToolRounds,
@@ -324,11 +360,7 @@ export class ConsoleSettingsController {
     }
 
     const updates: Record<string, any> = {
-      llm: {
-        primary: buildTierPayload(draft.tiers.primary),
-        secondary: draft.tierEnabled.secondary ? buildTierPayload(draft.tiers.secondary) : null,
-        light: draft.tierEnabled.light ? buildTierPayload(draft.tiers.light) : null,
-      },
+      llm: buildLLMPayload(draft),
       system: {
         systemPrompt: draft.system.systemPrompt,
         maxToolRounds: draft.system.maxToolRounds,

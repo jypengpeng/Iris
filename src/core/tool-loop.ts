@@ -22,12 +22,11 @@ import {
   isFunctionCallPart, extractText,
   FunctionCallPart, FunctionResponsePart,
 } from '../types';
-import { LLMTier } from '../llm/router';
 
 const logger = createLogger('ToolLoop');
 
 /** LLM 调用函数签名 —— 调用方注入具体实现 */
-export type LLMCaller = (request: LLMRequest, tier: LLMTier) => Promise<Content>;
+export type LLMCaller = (request: LLMRequest, modelName?: string) => Promise<Content>;
 
 /** ToolLoop 配置（可变引用，支持热重载） */
 export interface ToolLoopConfig {
@@ -48,10 +47,8 @@ export interface ToolLoopRunOptions {
   extraParts?: Part[];
   /** 新消息追加到历史时的回调（用于实时持久化） */
   onMessageAppend?: (content: Content) => Promise<void>;
-  /** 首轮 LLM 层级（默认 primary） */
-  primaryTier?: LLMTier;
-  /** 后续轮次 LLM 层级（默认 secondary） */
-  secondaryTier?: LLMTier;
+  /** 固定使用的模型名称；不填时由调用方自行决定默认模型 */
+  modelName?: string;
 }
 
 export class ToolLoop {
@@ -74,13 +71,10 @@ export class ToolLoop {
     callLLM: LLMCaller,
     options?: ToolLoopRunOptions,
   ): Promise<ToolLoopResult> {
-    const primaryTier = options?.primaryTier ?? 'primary';
-    const secondaryTier = options?.secondaryTier ?? 'secondary';
     let rounds = 0;
 
     while (rounds < this.config.maxRounds) {
       rounds++;
-      const tier: LLMTier = rounds === 1 ? primaryTier : secondaryTier;
 
       // 组装请求
       const request = this.prompt.assemble(
@@ -90,7 +84,7 @@ export class ToolLoop {
       // 调用 LLM（具体方式由 callLLM 决定）
       let modelContent: Content;
       try {
-        modelContent = await callLLM(request, tier);
+        modelContent = await callLLM(request, options?.modelName);
       } catch (err: unknown) {
         // LLM 调用失败时不中断整个对话，返回错误信息让上层可以保存已有历史
         const errorMsg = err instanceof Error ? err.message : String(err);

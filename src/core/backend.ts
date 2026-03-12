@@ -15,7 +15,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
 import type { LLMConfig } from '../config/types';
-import { LLMRouter, LLMTier } from '../llm/router';
+import { LLMRouter } from '../llm/router';
 import { supportsVision as llmSupportsVision, isDocumentMimeType, supportsNativePDF, supportsNativeOffice } from '../llm/vision';
 import { StorageProvider, SessionMeta } from '../storage/base';
 import { ToolRegistry } from '../tools/registry';
@@ -123,8 +123,8 @@ export interface BackendConfig {
   subAgentGuidance?: string;
   /** 默认模式名称 */
   defaultMode?: string;
-  /** 当前 primary LLM 配置（用于 vision 能力判定） */
-  primaryLLMConfig?: LLMConfig;
+  /** 当前活动模型配置（用于 vision 能力判定） */
+  currentLLMConfig?: LLMConfig;
   /** OCR 服务（当主模型不支持 vision 时回退使用） */
   ocrService?: OCRService;
 }
@@ -165,7 +165,7 @@ export class Backend extends EventEmitter {
   private memory?: MemoryProvider;
   private modeRegistry?: ModeRegistry;
   private defaultMode?: string;
-  private primaryLLMConfig?: LLMConfig;
+  private currentLLMConfig?: LLMConfig;
   private ocrService?: OCRService;
 
   private toolLoop: ToolLoop;
@@ -197,7 +197,7 @@ export class Backend extends EventEmitter {
     this.memory = memory;
     this.modeRegistry = modeRegistry;
     this.defaultMode = config?.defaultMode;
-    this.primaryLLMConfig = config?.primaryLLMConfig;
+    this.currentLLMConfig = config?.currentLLMConfig;
     this.ocrService = config?.ocrService;
 
     this.toolLoopConfig = { maxRounds: config?.maxToolRounds ?? 200 };
@@ -330,6 +330,29 @@ export class Backend extends EventEmitter {
     return this.router;
   }
 
+  /** 获取当前活动模型名称 */
+  getCurrentModelName(): string {
+    return this.router.getCurrentModelName();
+  }
+
+  /** 获取当前活动模型信息 */
+  getCurrentModelInfo() {
+    return this.router.getCurrentModelInfo();
+  }
+
+  /** 列出所有可用模型 */
+  listModels() {
+    return this.router.listModels();
+  }
+
+  /** 切换当前活动模型 */
+  switchModel(modelName: string) {
+    const info = this.router.setCurrentModel(modelName);
+    this.currentLLMConfig = this.router.getCurrentConfig();
+    logger.info(`当前模型已切换: ${info.modelName} -> ${info.modelId}`);
+    return info;
+  }
+
   /** 获取工具状态管理器 */
   getToolState(): ToolStateManager {
     return this.toolState;
@@ -345,13 +368,10 @@ export class Backend extends EventEmitter {
   /** 热重载：替换 LLM 路由器 */
   reloadLLM(newRouter: LLMRouter): void {
     this.router = newRouter;
-    const tierInfo = newRouter.getTierInfo();
-    const tierDesc = [
-      `primary=${tierInfo.primary}`,
-      tierInfo.secondary ? `secondary=${tierInfo.secondary}` : null,
-      tierInfo.light ? `light=${tierInfo.light}` : null,
-    ].filter(Boolean).join(' ');
-    logger.info(`LLM 已热重载: [${tierDesc}]`);
+    const modelsDesc = newRouter.listModels()
+      .map(model => `${model.current ? '*' : '-'}${model.modelName}=${model.modelId}`)
+      .join(' ');
+    logger.info(`LLM 已热重载: [${modelsDesc}]`);
   }
 
   /** 热重载：更新运行时参数 */
@@ -359,13 +379,13 @@ export class Backend extends EventEmitter {
     stream?: boolean;
     maxToolRounds?: number;
     systemPrompt?: string;
-    primaryLLMConfig?: LLMConfig;
+    currentLLMConfig?: LLMConfig;
     ocrService?: OCRService;
   }): void {
     if (opts.stream !== undefined) this.stream = opts.stream;
     if (opts.maxToolRounds !== undefined) this.toolLoopConfig.maxRounds = opts.maxToolRounds;
     if (opts.systemPrompt !== undefined) this.prompt.setSystemPrompt(opts.systemPrompt);
-    if ('primaryLLMConfig' in opts) this.primaryLLMConfig = opts.primaryLLMConfig;
+    if ('currentLLMConfig' in opts) this.currentLLMConfig = opts.currentLLMConfig;
     if ('ocrService' in opts) this.ocrService = opts.ocrService;
     logger.info(`配置已热重载: stream=${this.stream} maxToolRounds=${this.toolLoopConfig.maxRounds}`);
   }
@@ -415,12 +435,12 @@ export class Backend extends EventEmitter {
     }
 
     // 3. 构建 LLM 调用函数
-    const callLLM: LLMCaller = async (request, tier) => {
+    const callLLM: LLMCaller = async (request, modelName) => {
       let content: Content;
       if (this.stream) {
-        content = await this.callLLMStream(sessionId, request, tier);
+        content = await this.callLLMStream(sessionId, request, modelName);
       } else {
-        const response = await this.router.chat(request, tier);
+        const response = await this.router.chat(request, modelName);
         content = response.content;
         if (response.usageMetadata) {
           content.usageMetadata = response.usageMetadata;
@@ -438,8 +458,6 @@ export class Backend extends EventEmitter {
       loop = new ToolLoop(filteredTools, this.prompt, this.toolLoopConfig, this.toolState);
     }
 
-    const hasVisionParts = history.some(content => content.parts.some(isInlineDataPart));
-
     // 5. 立即持久化用户消息（不等工具循环结束，防止中途中断丢失）
     await this.storage.addMessage(sessionId, { role: 'user', parts: storedUserParts });
     if (isNewSession) {
@@ -449,7 +467,6 @@ export class Backend extends EventEmitter {
     // 6. 执行工具循环（新增消息通过回调实时持久化）
     const result = await loop.run(history, callLLM, {
       extraParts,
-      secondaryTier: hasVisionParts ? 'primary' : undefined,
       onMessageAppend: (content) => this.storage.addMessage(sessionId, content),
     });
 
@@ -500,7 +517,7 @@ export class Backend extends EventEmitter {
   private async callLLMStream(
     sessionId: string,
     request: LLMRequest,
-    tier: LLMTier = 'primary',
+    modelName?: string,
   ): Promise<Content> {
     const parts: Part[] = [];
     let usageMetadata: UsageMetadata | undefined;
@@ -511,7 +528,7 @@ export class Backend extends EventEmitter {
 
     this.emit('stream:start', sessionId);
 
-    const llmStream = this.router.chatStream(request, tier);
+    const llmStream = this.router.chatStream(request, modelName);
     for await (const chunk of llmStream) {
       const deltaParts: Part[] = [];
 
@@ -601,7 +618,7 @@ export class Backend extends EventEmitter {
     const hasText = text.trim().length > 0;
     const hasImages = Array.isArray(images) && images.length > 0;
     const hasDocuments = Array.isArray(documents) && documents.length > 0;
-    const visionEnabled = llmSupportsVision(this.primaryLLMConfig);
+    const visionEnabled = llmSupportsVision(this.currentLLMConfig);
 
     // ---- 图片处理（含自动缩放） ----
     if (hasImages) {
@@ -644,8 +661,8 @@ export class Backend extends EventEmitter {
 
     // ---- 文档处理（按端点能力分级） ----
     if (hasDocuments) {
-      const nativePdf = supportsNativePDF(this.primaryLLMConfig);
-      const nativeOffice = supportsNativeOffice(this.primaryLLMConfig);
+      const nativePdf = supportsNativePDF(this.currentLLMConfig);
+      const nativeOffice = supportsNativeOffice(this.currentLLMConfig);
 
       const EXTENSION_TO_MIME: Record<string, string> = {
         '.pdf': 'application/pdf',
@@ -734,7 +751,7 @@ export class Backend extends EventEmitter {
   }
 
   private preparePartsForLLM(parts: Part[]): Part[] {
-    const visionEnabled = llmSupportsVision(this.primaryLLMConfig);
+    const visionEnabled = llmSupportsVision(this.currentLLMConfig);
     const prepared: Part[] = [];
     let strippedImageCount = 0;
     let strippedDocumentCount = 0;
@@ -753,9 +770,9 @@ export class Backend extends EventEmitter {
         const mime = part.inlineData.mimeType;
         if (isDocumentMimeType(mime)) {
           // 文档 InlineDataPart：按端点能力决定保留或剥离
-          if (mime === 'application/pdf' && supportsNativePDF(this.primaryLLMConfig)) {
+          if (mime === 'application/pdf' && supportsNativePDF(this.currentLLMConfig)) {
             prepared.push({ inlineData: { ...part.inlineData } });
-          } else if (mime !== 'application/pdf' && supportsNativeOffice(this.primaryLLMConfig)) {
+          } else if (mime !== 'application/pdf' && supportsNativeOffice(this.currentLLMConfig)) {
             prepared.push({ inlineData: { ...part.inlineData } });
           } else {
             strippedDocumentCount++;

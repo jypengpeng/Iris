@@ -7,6 +7,7 @@ import type { OCRConfig } from './ocr';
 export interface LLMConfig {
   provider: 'gemini' | 'openai-compatible' | 'claude' | 'openai-responses';
   apiKey: string;
+  /** 提供商真实模型 id */
   model: string;
   baseUrl: string;
   /** 模型上下文窗口大小（token 数），用于 TUI 显示占用比例 */
@@ -19,11 +20,17 @@ export interface LLMConfig {
   requestBody?: Record<string, unknown>;
 }
 
-/** 三层 LLM 配置：primary 必填，secondary/light 可选（未配置时自动向上回退） */
-export interface TieredLLMConfig {
-  primary: LLMConfig;
-  secondary?: LLMConfig;
-  light?: LLMConfig;
+/** 具名模型配置（从 YAML 键名解析出 modelName） */
+export interface LLMModelDef extends LLMConfig {
+  modelName: string;
+}
+
+/** LLM 模型池配置 */
+export interface LLMRegistryConfig {
+  /** 启动时默认使用的模型名称 */
+  defaultModelName: string;
+  /** 可用模型列表 */
+  models: LLMModelDef[];
 }
 
 export interface PlatformConfig {
@@ -82,7 +89,7 @@ export interface MCPConfig {
 }
 
 export interface AppConfig {
-  llm: TieredLLMConfig;
+  llm: LLMRegistryConfig;
   ocr?: OCRConfig;
   platform: PlatformConfig;
   storage: StorageConfig;
@@ -95,7 +102,7 @@ export interface AppConfig {
   subAgents?: SubAgentsConfig;
 }
 
-/** 子代理类型定义（配置文件格式，tier 为 string；运行时转为 SubAgentTypeConfig） */
+/** 子代理类型定义（配置文件格式） */
 export interface SubAgentTypeDef {
   /** 类型标识（从 YAML 键名解析） */
   name: string;
@@ -107,8 +114,8 @@ export interface SubAgentTypeDef {
   allowedTools?: string[];
   /** 工具黑名单 */
   excludedTools?: string[];
-  /** LLM 层级: primary / secondary / light */
-  tier: string;
+  /** 固定使用的模型名称；不填时跟随当前活动模型 */
+  modelName?: string;
   /** 最大工具执行轮次 */
   maxToolRounds: number;
   /** 当前类型的 sub_agent 调用是否可按 parallel 工具参与调度，默认 false */

@@ -9,6 +9,7 @@ import { sendJSON } from '../router';
 
 export interface StatusInfo {
   provider: string;
+  /** 提供商真实模型 ID，对应 LLMConfig.model */
   model: string;
   tools: string[];
   stream: boolean;

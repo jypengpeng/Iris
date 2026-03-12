@@ -19,6 +19,7 @@ export interface Command {
 export const COMMANDS: Command[] = [
   { name: '/new',      description: '新建对话' },
   { name: '/load',     description: '加载历史对话' },
+  { name: '/model',    description: '查看或切换当前模型' },
   { name: '/settings', description: '打开设置中心（LLM / System / MCP）' },
   { name: '/mcp',      description: '直接打开 MCP 管理区' },
   { name: '/sh',       description: '执行命令（如 cd、dir、git 等）' },
@@ -31,7 +32,7 @@ interface InputBarProps {
 }
 
 function getCommandInput(cmd: Command): string {
-  return cmd.name === '/sh' ? '/sh ' : cmd.name;
+  return cmd.name === '/sh' || cmd.name === '/model' ? `${cmd.name} ` : cmd.name;
 }
 
 function isExactCommandValue(value: string, cmd: Command): boolean {

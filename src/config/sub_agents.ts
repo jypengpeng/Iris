@@ -9,20 +9,24 @@
  *       description: "执行需要多步工具操作的复杂子任务"
  *       systemPrompt: "你是一个通用子代理..."
  *       excludedTools: [sub_agent]
+ *       modelName: gemini_flash
  *       parallel: false
- *       tier: secondary
  *       maxToolRounds: 200
  *     explore:
  *       description: "只读搜索和阅读文件"
  *       allowedTools: [read_file, terminal]
  *       parallel: false
- *       tier: light
  *       maxToolRounds: 200
  */
 
 import { SubAgentsConfig, SubAgentTypeDef } from './types';
 
-const VALID_TIERS = new Set(['primary', 'secondary', 'light']);
+function normalizeModelName(cfg: Record<string, any>): string | undefined {
+  if (typeof cfg.modelName === 'string' && cfg.modelName.trim()) {
+    return cfg.modelName.trim();
+  }
+  return undefined;
+}
 
 export function parseSubAgentsConfig(raw: any): SubAgentsConfig | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -44,7 +48,7 @@ export function parseSubAgentsConfig(raw: any): SubAgentsConfig | undefined {
       excludedTools: Array.isArray(cfg.excludedTools)
         ? cfg.excludedTools.filter((s: any) => typeof s === 'string')
         : undefined,
-      tier: typeof cfg.tier === 'string' && VALID_TIERS.has(cfg.tier) ? cfg.tier : 'secondary',
+      modelName: normalizeModelName(cfg),
       maxToolRounds: typeof cfg.maxToolRounds === 'number' && cfg.maxToolRounds > 0
         ? cfg.maxToolRounds
         : 200,

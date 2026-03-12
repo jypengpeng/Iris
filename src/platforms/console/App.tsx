@@ -112,6 +112,13 @@ export interface AppHandle {
   finalizeResponse(durationMs: number): void;
 }
 
+interface ModelCommandResult {
+  message: string;
+  modelId?: string;
+  modelName?: string;
+  contextWindow?: number;
+}
+
 interface AppProps {
   onReady: (handle: AppHandle) => void;
   onSubmit: (text: string) => void;
@@ -119,23 +126,29 @@ interface AppProps {
   onLoadSession: (id: string) => Promise<void>;
   onListSessions: () => Promise<SessionMeta[]>;
   onRunCommand: (cmd: string) => { output: string; cwd: string };
+  onModelCommand: (text: string) => ModelCommandResult;
   onLoadSettings: () => Promise<ConsoleSettingsSnapshot>;
   onSaveSettings: (snapshot: ConsoleSettingsSnapshot) => Promise<ConsoleSettingsSaveResult>;
   onExit: () => void;
   modeName?: string;
+  modelId: string;
+  modelName: string;
   contextWindow?: number;
 }
 
 /** 视图模式 */
 type ViewMode = 'chat' | 'session-list' | 'settings';
 
-export function App({ onReady, onSubmit, onNewSession, onLoadSession, onListSessions, onRunCommand, onLoadSettings, onSaveSettings, onExit, modeName, contextWindow }: AppProps) {
+export function App({ onReady, onSubmit, onNewSession, onLoadSession, onListSessions, onRunCommand, onModelCommand, onLoadSettings, onSaveSettings, onExit, modeName, modelId, modelName, contextWindow }: AppProps) {
   const [messages, setMessages] =useState<ChatMessage[]>([]);
   const [streamingParts, setStreamingParts] = useState<MessagePart[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeHidden, setActiveHidden] = useState(false);
   const [contextTokens, setContextTokens] = useState(0);
+  const [currentModelId, setCurrentModelId] = useState(modelId);
+  const [currentModelName, setCurrentModelName] = useState(modelName);
+  const [currentContextWindow, setCurrentContextWindow] = useState(contextWindow);
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
   const [sessionList, setSessionList] = useState<SessionMeta[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -329,6 +342,17 @@ export function App({ onReady, onSubmit, onNewSession, onLoadSession, onListSess
       setViewMode('settings');
       return;
     }
+    if (text.startsWith('/model')) {
+      const result = onModelCommand(text);
+      if (result.modelId) setCurrentModelId(result.modelId);
+      if (result.modelName) setCurrentModelName(result.modelName);
+      if ('contextWindow' in result) setCurrentContextWindow(result.contextWindow);
+      setMessages((prev: ChatMessage[]) => [
+        ...prev,
+        { id: nextMsgId(), role: 'assistant' as const, parts: [{ type: 'text' as const, text: result.message }] },
+      ]);
+      return;
+    }
     if (text.startsWith('/sh ') || text === '/sh') {
       const cmd = text.slice(4).trim();
       if (!cmd) return;
@@ -342,7 +366,7 @@ export function App({ onReady, onSubmit, onNewSession, onLoadSession, onListSess
       return;
     }
     onSubmit(text);
-  }, [onSubmit, onNewSession, onListSessions, onRunCommand, onExit]);
+  }, [onSubmit, onNewSession, onListSessions, onRunCommand, onModelCommand, onExit]);
 
   // ============ 键盘输入 ============
 
@@ -508,12 +532,15 @@ export function App({ onReady, onSubmit, onNewSession, onLoadSession, onListSess
           <Text dimColor>{'\u2500'.repeat(Math.max(3, termWidth - 6))}</Text>
         </Text>
         <Text dimColor>
+          {'MODEL: '}{currentModelName}
+          {currentModelId ? ` (${currentModelId})` : ''}
+          {'  '}
           {'MODE: '}{(modeName ?? 'normal').toUpperCase()}
           {'  CTX: '}
           {contextTokens > 0 ? contextTokens.toLocaleString() : '-'}
-          {contextWindow ? `/${contextWindow.toLocaleString()}` : ''}
-          {contextTokens > 0 && contextWindow
-            ? ` (${Math.round(contextTokens / contextWindow * 100)}%)`
+          {currentContextWindow ? `/${currentContextWindow.toLocaleString()}` : ''}
+          {contextTokens > 0 && currentContextWindow
+            ? ` (${Math.round(contextTokens / currentContextWindow * 100)}%)`
             : ''
           }
         </Text>

@@ -5,7 +5,7 @@
 import { Backend } from '../core/backend';
 import { createLLMRouter } from '../llm/factory';
 import { OCRService } from '../ocr';
-import { parseTieredLLMConfig } from './llm';
+import { parseLLMConfig } from './llm';
 import { parseOCRConfig } from './ocr';
 import { parseMCPConfig } from './mcp';
 import { DEFAULT_SYSTEM_PROMPT } from '../prompt/templates/default';
@@ -19,8 +19,9 @@ export interface RuntimeConfigReloadContext {
 }
 
 export interface RuntimeConfigSummary {
-  llmName: string;
   modelName: string;
+  modelId: string;
+  provider: string;
   streamEnabled: boolean;
   contextWindow?: number;
 }
@@ -37,16 +38,18 @@ export async function applyRuntimeConfigReload(
   context: RuntimeConfigReloadContext,
   mergedConfig: any,
 ): Promise<RuntimeConfigSummary> {
-  const tieredConfig = parseTieredLLMConfig(mergedConfig.llm);
+  const llmConfig = parseLLMConfig(mergedConfig.llm);
   const ocrConfig = parseOCRConfig(mergedConfig.ocr);
-  const newRouter = createLLMRouter(tieredConfig);
+  const previousModelName = context.backend.getCurrentModelName();
+  const newRouter = createLLMRouter(llmConfig, previousModelName);
+  const currentModel = newRouter.getCurrentModelInfo();
 
   context.backend.reloadLLM(newRouter);
   context.backend.reloadConfig({
     stream: mergedConfig.system?.stream,
     maxToolRounds: mergedConfig.system?.maxToolRounds,
     systemPrompt: mergedConfig.system?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-    primaryLLMConfig: tieredConfig.primary,
+    currentLLMConfig: newRouter.getCurrentConfig(),
     ocrService: ocrConfig ? new OCRService(ocrConfig) : undefined,
   });
 
@@ -73,9 +76,10 @@ export async function applyRuntimeConfigReload(
   }
 
   return {
-    llmName: tieredConfig.primary.provider,
-    modelName: tieredConfig.primary.model,
+    modelName: currentModel.modelName,
+    modelId: currentModel.modelId,
+    provider: currentModel.provider,
     streamEnabled: mergedConfig.system?.stream ?? context.backend.isStreamEnabled(),
-    contextWindow: tieredConfig.primary.contextWindow,
+    contextWindow: currentModel.contextWindow,
   };
 }

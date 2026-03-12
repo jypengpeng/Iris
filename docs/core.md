@@ -34,7 +34,7 @@ Platform ──调方法──▶ Backend ──发事件──▶ Platform
 
 ```typescript
 new Backend(
-  router: LLMRouter,           // LLM 三层路由器
+  router: LLMRouter,           // LLM 模型路由器
   storage: StorageProvider,    // 存储层
   tools: ToolRegistry,         // 工具注册中心
   toolState: ToolStateManager, // 工具状态管理器
@@ -233,7 +233,7 @@ interface SubAgentType {
   description: string;       // 供 LLM 选择时参考
   systemPrompt: string;      // 子 Agent 的系统提示词
   parallel: boolean;         // 当前类型的 sub_agent 调用是否可并行调度，默认 false
-  tier: LLMTier;             // 使用的 LLM 层级
+  modelName?: string;        // 固定使用的模型名称；不填时跟随当前活动模型
   maxToolRounds: number;     // 最大工具轮次
   allowedTools?: string[];   // 工具白名单
   excludedTools?: string[];  // 工具黑名单
@@ -242,13 +242,15 @@ interface SubAgentType {
 
 **默认类型：**
 
-| 类型 | 层级 | 轮次 | 并行调度 | 工具过滤 | 用途 |
-|------|------|------|----------|----------|------|
-| `general-purpose` | secondary | 200 | false | 排除 `sub_agent` | 多步骤通用任务 |
-| `explore` | light | 200 | false | 仅 `read_file`、`terminal` | 只读探索 |
-| `recall` | light | 3 | false | 仅 `memory_search` | 记忆搜索 |
+| 类型 | 固定模型 | 轮次 | 并行调度 | 工具过滤 | 用途 |
+|------|----------|------|----------|----------|------|
+| `general-purpose` | 跟随当前模型 | 200 | false | 排除 `sub_agent` | 多步骤通用任务 |
+| `explore` | 跟随当前模型 | 200 | false | 仅 `read_file`、`terminal` | 只读探索 |
+| `recall` | 跟随当前模型 | 3 | false | 仅 `memory_search` | 记忆搜索 |
 
 `parallel` 的含义是：当前类型的 `sub_agent` 调用是否作为 parallel 工具参与调度。默认 `false`。不写就是 `false`，只有显式写 `true` 的类型，才会在同一轮里与相邻的 parallel 工具一起进入并行批次。
+
+`modelName` 是可选字段。填写后，该类型的子代理固定使用对应模型名称；不填时，跟随 Backend 当前活动模型。
 
 ### agentGuidance
 

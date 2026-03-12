@@ -8,6 +8,7 @@ import { Bot, Context } from 'grammy';
 import { PlatformAdapter, splitText } from '../base';
 import { Backend } from '../../core/backend';
 import { createLogger } from '../../logger';
+import { Content, extractText } from '../../types';
 
 const logger = createLogger('Telegram');
 
@@ -20,6 +21,7 @@ export interface TelegramConfig {
 export class TelegramPlatform extends PlatformAdapter {
   private bot: Bot;
   private backend: Backend;
+  private pendingTexts = new Map<string, string>();
 
   constructor(backend: Backend, config: TelegramConfig) {
     super();
@@ -28,8 +30,31 @@ export class TelegramPlatform extends PlatformAdapter {
   }
 
   async start(): Promise<void> {
-    // 监听 Backend 事件
+    // 非流式或回退消息：直接发送
     this.backend.on('response', (sid: string, text: string) => {
+      this.pendingTexts.delete(sid);
+      this.sendToChat(sid, text);
+    });
+
+    // 流式模式下缓存每轮完整 assistant 文本，待 done 时一次性发送
+    this.backend.on('assistant:content', (sid: string, content: Content) => {
+      const text = extractText(content.parts);
+      if (!text) return;
+      this.pendingTexts.set(sid, text);
+    });
+
+    this.backend.on('error', (sid: string, error: string) => {
+      this.pendingTexts.delete(sid);
+      this.sendToChat(sid, `错误: ${error}`);
+    });
+
+    this.backend.on('done', (sid: string) => {
+      if (!this.backend.isStreamEnabled()) return;
+
+      const text = this.pendingTexts.get(sid);
+      if (!text) return;
+
+      this.pendingTexts.delete(sid);
       this.sendToChat(sid, text);
     });
 
@@ -52,7 +77,7 @@ export class TelegramPlatform extends PlatformAdapter {
   // ============ 内部方法 ============
 
   private async sendToChat(sessionId: string, text: string): Promise<void> {
-    const chatId =sessionId.replace('telegram-', '');
+    const chatId = sessionId.replace('telegram-', '');
     const chunks = splitText(text, MESSAGE_MAX_LENGTH);
     for (const chunk of chunks) {
       await this.bot.api.sendMessage(chatId, chunk);
@@ -70,7 +95,7 @@ export class TelegramPlatform extends PlatformAdapter {
     try {
       await this.backend.chat(sessionId, text);
     } catch (err) {
-    logger.error('处理消息时出错:', err);
+      logger.error('处理消息时出错:', err);
     }
   }
 }

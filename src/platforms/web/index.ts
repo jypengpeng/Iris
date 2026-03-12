@@ -113,6 +113,10 @@ export class WebPlatform extends PlatformAdapter {
       this.writeSSE(sid, { type: 'delta', text: chunk });
     });
 
+    this.backend.on('error', (sid: string, message: string) => {
+      this.writeSSE(sid, { type: 'error', message });
+    });
+
     this.backend.on('stream:end', (sid: string) => {
       this.writeSSE(sid, { type: 'stream_end' });
     });

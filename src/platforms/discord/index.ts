@@ -8,6 +8,7 @@ import { Client, GatewayIntentBits, Message, Partials } from 'discord.js';
 import { PlatformAdapter, splitText } from '../base';
 import { Backend } from '../../core/backend';
 import { createLogger } from '../../logger';
+import { Content, extractText } from '../../types';
 
 const logger = createLogger('Discord');
 
@@ -21,6 +22,7 @@ export class DiscordPlatform extends PlatformAdapter {
   private client: Client;
   private token: string;
   private backend: Backend;
+  private pendingTexts = new Map<string, string>();
 
   constructor(backend: Backend, config: DiscordConfig) {
     super();
@@ -38,16 +40,32 @@ export class DiscordPlatform extends PlatformAdapter {
   }
 
   async start(): Promise<void> {
-    // 监听 Backend 事件
+    // 非流式或回退消息：直接发送
     this.backend.on('response', (sid: string, text: string) => {
+      this.pendingTexts.delete(sid);
       this.sendToChannel(sid, text);
     });
 
-this.backend.on('stream:start', () => {});
-    this.backend.on('stream:chunk', () => {});
-    this.backend.on('stream:end', (sid: string) => {
-      // Discord 不支持流式，等全部结束后发送 —— 但流式文本已在 Backend 中累积，
-      // Backend 会在非流式模式下触发 response 事件，所以这里不需要处理。
+    // 流式模式下缓存每轮完整 assistant 文本，待 done 时一次性发送
+    this.backend.on('assistant:content', (sid: string, content: Content) => {
+      const text = extractText(content.parts);
+      if (!text) return;
+      this.pendingTexts.set(sid, text);
+    });
+
+    this.backend.on('error', (sid: string, error: string) => {
+      this.pendingTexts.delete(sid);
+      this.sendToChannel(sid, `错误: ${error}`);
+    });
+
+    this.backend.on('done', (sid: string) => {
+      if (!this.backend.isStreamEnabled()) return;
+
+      const text = this.pendingTexts.get(sid);
+      if (!text) return;
+
+      this.pendingTexts.delete(sid);
+      this.sendToChannel(sid, text);
     });
 
     this.client.on('ready', () => {

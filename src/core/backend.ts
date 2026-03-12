@@ -453,6 +453,21 @@ export class Backend extends EventEmitter {
       onMessageAppend: (content) => this.storage.addMessage(sessionId, content),
     });
 
+    // 6.5. 工具循环若以“文本回退”结束（如 LLM 调用失败 / 超过最大轮次），
+    // ToolLoop 不会追加最后一条 model 消息；这里补一条，统一平台事件与持久化行为。
+    const hasFinalModelMessage = result.history[result.history.length - 1]?.role === 'model';
+    let appendedFallbackModel = false;
+    if (!hasFinalModelMessage && result.text) {
+      const fallbackContent: Content = {
+        role: 'model',
+        parts: [{ text: result.text }],
+      };
+      result.history.push(fallbackContent);
+      await this.storage.addMessage(sessionId, fallbackContent);
+      this.emit('assistant:content', sessionId, fallbackContent);
+      appendedFallbackModel = true;
+    }
+
     // 7. 将耗时写入最后一条 model 消息（同时更新已持久化的记录）
     const durationMs = Date.now() - startTime;
     for (let i = result.history.length - 1; i >= 0; i--) {
@@ -472,7 +487,7 @@ export class Backend extends EventEmitter {
     await this.updateSessionMeta(sessionId, storedUserParts, false);
 
     // 9. 非流式模式：发送最终文本
-    if (!this.stream && result.text) {
+    if ((!this.stream || appendedFallbackModel) && result.text) {
       this.emit('response', sessionId, result.text);
     }
     this.emit('done', sessionId, durationMs);

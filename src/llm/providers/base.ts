@@ -14,13 +14,28 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * 深合并两个对象。合并策略：
+ * - 两边都是普通对象 → 递归合并
+ * - base 是数组 + override 是数组 → concat 追加
+ * - base 是数组 + override 是非 null 对象 → 将对象追加到数组末尾
+ * - 其他情况（标量、类型不同等） → override 直接覆盖
+ */
 function deepMergeObjects(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(override)) {
     const current = result[key];
     if (isPlainObject(current) && isPlainObject(value)) {
+      // 两边都是普通对象 → 递归合并
       result[key] = deepMergeObjects(current, value);
+    } else if (Array.isArray(current) && Array.isArray(value)) {
+      // 两边都是数组 → 追加
+      result[key] = [...current, ...value];
+    } else if (Array.isArray(current) && value !== null && typeof value === 'object') {
+      // base 是数组，override 是单个对象 → 追加为数组元素
+      result[key] = [...current, value];
     } else {
+      // 标量 / 类型不同 → 直接覆盖
       result[key] = value;
     }
   }

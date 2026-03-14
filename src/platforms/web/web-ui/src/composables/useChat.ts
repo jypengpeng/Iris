@@ -5,7 +5,7 @@
  * 监听 currentSessionId 变化自动加载历史。
  */
 
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useSessions } from './useSessions'
 import * as api from '../api/client'
 import type { ImageInput, DocumentInput, Message, MessagePart } from '../api/types'
@@ -22,14 +22,23 @@ const messagesError = ref('')
 /** 是否正在发送 */
 const sending = ref(false)
 
+/** 待确认删除的消息索引 */
+const armedDeleteMessageIndex = ref<number | null>(null)
+
+/** 正在删除的消息索引 */
+const deletingMessageIndex = ref<number | null>(null)
+
+/** 消息操作错误（如删除失败） */
+const messageActionError = ref('')
+
 /** 流式输出累积文本 */
 const streamingText = ref('')
 
 /** 是否正在流式接收 */
 const isStreaming = ref(false)
 
-/** 当前请求的 AbortController，用于取消进行中的请求 */
-let currentController: AbortController | null = null
+/** 当前请求的 AbortController，预留给后续显式取消能力 */
+let _currentController: AbortController | null = null
 
 /** 历史加载请求版本号，用于丢弃过期响应 */
 let loadVersion = 0
@@ -40,7 +49,10 @@ let activeRequestToken: symbol | null = null
 /** 当前活动请求归属的 sessionId（新会话会在 onSessionId 更新） */
 let activeRequestSessionId: string | null = null
 
-const { currentSessionId, loadSessions } = useSessions()
+/** 服务端回填新 sessionId 时，跳过一次 currentSessionId 变更触发的历史加载 */
+let suppressNextSessionLoadForId: string | null = null
+
+const { currentSessionId, loadSessions, markSessionStreaming, markSessionCompleted, clearSessionActivity } = useSessions()
 
 function normalizeImages(images?: ImageInput[]): ImageInput[] {
   return (images ?? []).map((image) => ({
@@ -89,19 +101,12 @@ function buildUserMessageParts(text: string, images: ImageInput[], documents: Do
   return parts
 }
 
-/** 取消当前请求并失效对应回调 */
-function abortCurrent() {
-  if (currentController) {
-    currentController.abort()
-    currentController = null
-  }
-  activeRequestToken = null
-  activeRequestSessionId = null
-}
-
-async function loadMessagesForSession(id: string | null) {
+async function loadMessagesForSession(id: string | null, preserveExisting = false) {
   const version = ++loadVersion
   messagesError.value = ''
+  messageActionError.value = ''
+  armedDeleteMessageIndex.value = null
+  deletingMessageIndex.value = null
 
   if (!id) {
     messages.value = []
@@ -110,7 +115,10 @@ async function loadMessagesForSession(id: string | null) {
   }
 
   messagesLoading.value = true
-  messages.value = []
+
+  if (!preserveExisting) {
+    messages.value = []
+  }
 
   try {
     const data = await api.getMessages(id)
@@ -118,7 +126,9 @@ async function loadMessagesForSession(id: string | null) {
     messages.value = data.messages || []
   } catch (err) {
     if (version !== loadVersion) return
-    messages.value = []
+    if (!preserveExisting) {
+      messages.value = []
+    }
     messagesError.value = err instanceof Error ? err.message : '加载会话消息失败'
   } finally {
     if (version === loadVersion) {
@@ -129,27 +139,22 @@ async function loadMessagesForSession(id: string | null) {
 
 // 模块级 watch，生命周期与模块一致，不受组件卸载影响
 watch(currentSessionId, async (id) => {
-  // 由 onSessionId 触发的"新会话绑定"不应被视为切换会话
-  const isInternalSessionBinding =
-    currentController !== null && id !== null && id === activeRequestSessionId
-
-  if (isInternalSessionBinding) {
+  if (id !== null && suppressNextSessionLoadForId === id) {
+    suppressNextSessionLoadForId = null
     return
   }
-
-  // 用户主动切换会话：中断进行中的请求并重置状态
-  abortCurrent()
-  streamingText.value = ''
-  isStreaming.value = false
-  sending.value = false
 
   await loadMessagesForSession(id)
 })
 
 export function useChat() {
   /** 提交流式文本到消息列表 */
-  function flushStreaming() {
-    if (streamingText.value) {
+  function isCurrentViewBoundToActiveRequest(): boolean {
+    return activeRequestToken !== null && currentSessionId.value === activeRequestSessionId
+  }
+
+  function flushStreaming(targetSessionId: string | null = activeRequestSessionId) {
+    if (streamingText.value && targetSessionId !== null && currentSessionId.value === targetSessionId) {
       messages.value.push({
         role: 'model',
         parts: [{ type: 'text', text: streamingText.value }],
@@ -159,6 +164,37 @@ export function useChat() {
     isStreaming.value = false
   }
 
+  function isRetryableUserMessage(message: Message | undefined): boolean {
+    return !!message
+      && message.role === 'user'
+      && message.parts.some((part) => (
+        part.type === 'text' || part.type === 'image' || part.type === 'document'
+      ))
+  }
+
+  function messageHasToolParts(message: Message): boolean {
+    return message.parts.some((part) => part.type === 'function_call' || part.type === 'function_response')
+  }
+
+  function commitStructuredAssistantMessage(message: Message) {
+    if (!isCurrentViewBoundToActiveRequest()) return
+    streamingText.value = ''
+    isStreaming.value = false
+    messages.value.push(message)
+  }
+
+  const currentSessionSending = computed(() => sending.value && isCurrentViewBoundToActiveRequest())
+  const currentSessionStreamingText = computed(() => {
+    return isCurrentViewBoundToActiveRequest()
+      ? streamingText.value
+      : ''
+  })
+  const currentSessionIsStreaming = computed(() => {
+    return isCurrentViewBoundToActiveRequest()
+      ? isStreaming.value
+      : false
+  })
+
   async function reloadMessages() {
     if (sending.value) return
     streamingText.value = ''
@@ -166,7 +202,69 @@ export function useChat() {
     await loadMessagesForSession(currentSessionId.value)
   }
 
+  function clearMessageActionError() {
+    messageActionError.value = ''
+  }
+
+  function resolveRetryUserMessageIndex(messageIndex?: number): number | null {
+    if (messages.value.length === 0) return null
+
+    const anchorIndex = typeof messageIndex === 'number'
+      ? Math.min(Math.max(messageIndex, 0), messages.value.length - 1)
+      : messages.value.length - 1
+
+    for (let index = anchorIndex; index >= 0; index -= 1) {
+      if (isRetryableUserMessage(messages.value[index])) {
+        return index
+      }
+    }
+
+    return null
+  }
+
+  async function deleteMessage(messageIndex?: number) {
+    if (sending.value || deletingMessageIndex.value !== null) return
+
+    const targetIndex = typeof messageIndex === 'number'
+      ? Math.min(Math.max(messageIndex, 0), messages.value.length - 1)
+      : messages.value.length - 1
+
+    if (targetIndex < 0 || targetIndex >= messages.value.length) return
+
+    if (armedDeleteMessageIndex.value !== targetIndex) {
+      armedDeleteMessageIndex.value = targetIndex
+      messageActionError.value = ''
+      return
+    }
+
+    deletingMessageIndex.value = targetIndex
+    armedDeleteMessageIndex.value = null
+
+    try {
+      messageActionError.value = ''
+
+      if (currentSessionId.value) {
+        await api.truncateMessages(currentSessionId.value, targetIndex)
+      }
+
+      streamingText.value = ''
+      isStreaming.value = false
+      messages.value.splice(targetIndex)
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e)
+      messageActionError.value = `删除消息失败：无法同步更新历史记录 — ${detail}`
+    } finally {
+      if (deletingMessageIndex.value === targetIndex) {
+        deletingMessageIndex.value = null
+      }
+    }
+  }
+
   async function sendMessage(text: string, images?: ImageInput[], documents?: DocumentInput[]) {
+    armedDeleteMessageIndex.value = null
+    deletingMessageIndex.value = null
+    messageActionError.value = ''
+
     const normalizedImages = normalizeImages(images)
     const normalizedDocs = normalizeDocuments(documents)
     if (sending.value || (!text.trim() && normalizedImages.length === 0 && normalizedDocs.length === 0)) return
@@ -186,19 +284,31 @@ export function useChat() {
     const requestToken = Symbol('chat-request')
     activeRequestToken = requestToken
     activeRequestSessionId = currentSessionId.value
+    const requestEntrySessionId = activeRequestSessionId
+
+    let receivedStructuredAssistantContent = false
+    let requestNeedsHistoryRefresh = false
+    if (activeRequestSessionId) {
+      markSessionStreaming(activeRequestSessionId)
+    }
 
     /** 检查回调是否仍属于当前活动请求 */
     const isStale = () => activeRequestToken !== requestToken
 
-    currentController = api.sendChat(activeRequestSessionId, text, {
+    _currentController = api.sendChat(activeRequestSessionId, text, {
       onSessionId(id) {
         if (isStale()) return
 
         // 先更新请求归属，再更新 currentSessionId，避免 watch 误判为"切换会话"
+        const shouldAutoFocusRequestSession = currentSessionId.value === null || currentSessionId.value === requestEntrySessionId
         activeRequestSessionId = id
-        if (currentSessionId.value !== id) {
+        markSessionStreaming(id)
+
+        if (shouldAutoFocusRequestSession && currentSessionId.value !== id) {
+          suppressNextSessionLoadForId = id
           currentSessionId.value = id
         }
+
         void loadSessions()
       },
       onDelta(delta) {
@@ -207,60 +317,86 @@ export function useChat() {
         streamingText.value += delta
       },
       onMessage(fullText) {
-        if (isStale()) return
+        if (receivedStructuredAssistantContent) return
+        if (isStale() || !isCurrentViewBoundToActiveRequest()) return
         messages.value.push({
           role: 'model',
           parts: [{ type: 'text', text: fullText }],
         })
       },
+      onAssistantContent(message) {
+        receivedStructuredAssistantContent = true
+        requestNeedsHistoryRefresh = requestNeedsHistoryRefresh || messageHasToolParts(message)
+        if (isStale()) return
+        commitStructuredAssistantMessage(message)
+      },
       onStreamEnd() {
         if (isStale()) return
-        flushStreaming()
       },
       onDone() {
         if (isStale()) return
-        flushStreaming()
+
+        const finishedSessionId = activeRequestSessionId
+        const shouldKeepCompletedBadge = !!finishedSessionId && currentSessionId.value !== finishedSessionId
+
+        flushStreaming(finishedSessionId)
+        if (finishedSessionId) {
+          markSessionCompleted(finishedSessionId, shouldKeepCompletedBadge)
+        }
+
         sending.value = false
-        currentController = null
+        _currentController = null
         activeRequestToken = null
         activeRequestSessionId = null
+        if (finishedSessionId && currentSessionId.value === finishedSessionId && requestNeedsHistoryRefresh) {
+          void loadMessagesForSession(finishedSessionId, true)
+        }
         void loadSessions()
       },
       onError(msg) {
         if (isStale()) return
-        flushStreaming()
-        messages.value.push({
-          role: 'model',
-          parts: [{ type: 'text', text: `错误: ${msg}` }],
-        })
+
+        const failedSessionId = activeRequestSessionId
+
+        flushStreaming(failedSessionId)
+        if (failedSessionId) {
+          clearSessionActivity(failedSessionId)
+        }
+
+        if (isCurrentViewBoundToActiveRequest()) {
+          messages.value.push({
+            role: 'model',
+            parts: [{ type: 'text', text: `错误: ${msg}` }],
+          })
+        }
+
         sending.value = false
-        currentController = null
+        _currentController = null
         activeRequestToken = null
         activeRequestSessionId = null
+        void loadSessions()
       },
     }, normalizedImages, normalizedDocs)
   }
 
   /** 重试指定消息所属轮次；未传索引时退化为重试最后一轮 */
   async function retryLastMessage(messageIndex?: number) {
-    if (sending.value) return
-
-    const anchorIndex = typeof messageIndex === 'number'
-      ? Math.min(Math.max(messageIndex, 0), messages.value.length - 1)
-      : messages.value.length - 1
-
-    // 从指定锚点向前找最近一条用户消息
-    let lastUserIdx = -1
-    for (let i = anchorIndex; i >= 0; i--) {
-      if (messages.value[i].role === 'user') {
-        lastUserIdx = i
-        break
-      }
+    if (sending.value) {
+      messageActionError.value = '当前仍有回复生成中，暂时无法重试。'
+      return
     }
 
-    if (lastUserIdx < 0) return
+    armedDeleteMessageIndex.value = null
+    deletingMessageIndex.value = null
+    messageActionError.value = ''
 
-    const userMsg = messages.value[lastUserIdx]
+    const retryUserIndex = resolveRetryUserMessageIndex(messageIndex)
+    if (retryUserIndex === null) {
+      messageActionError.value = '未找到可重试的用户消息。'
+      return
+    }
+
+    const userMsg = messages.value[retryUserIndex]
     const text = userMsg.parts
       .filter((part) => part.type === 'text')
       .map((part) => part.text ?? '')
@@ -276,32 +412,28 @@ export function useChat() {
       ))
       .map((part) => ({ fileName: part.fileName ?? '', mimeType: part.mimeType, data: part.data }))
 
-    if (!text.trim() && images.length === 0 && documents.length === 0) return
+    if (!text.trim() && images.length === 0 && documents.length === 0) {
+      messageActionError.value = '该轮对话缺少可重试的文本或附件内容。'
+      return
+    }
 
     // 提前置忙，防止异步截断期间重复触发
     sending.value = true
     messagesError.value = ''
 
-    // 先截断后端历史，确保前后端一致
     if (currentSessionId.value) {
       try {
-        await api.truncateMessages(currentSessionId.value, lastUserIdx)
+        await api.truncateMessages(currentSessionId.value, retryUserIndex)
       } catch (e) {
-        // 截断失败，提示用户并中止重试以保持前后端一致
         const detail = e instanceof Error ? e.message : String(e)
-        messages.value.push({
-          role: 'model',
-          parts: [{ type: 'text', text: `重试失败: 无法截断历史记录 — ${detail}` }],
-        })
+        messageActionError.value = `重试失败：无法截断历史记录 — ${detail}`
         sending.value = false
         return
       }
     }
 
-    // 移除该用户消息及之后的所有消息（本轮对话）
-    messages.value.splice(lastUserIdx)
+    messages.value.splice(retryUserIndex)
 
-    // 解除忙状态后重新发送（sendMessage 内部会重新置 sending = true）
     sending.value = false
     void sendMessage(text, images, documents)
   }
@@ -310,11 +442,17 @@ export function useChat() {
     messages,
     messagesLoading,
     messagesError,
+    messageActionError,
     sending,
-    streamingText,
-    isStreaming,
+    streamingText: currentSessionStreamingText,
+    isStreaming: currentSessionIsStreaming,
+    armedDeleteMessageIndex,
+    deletingMessageIndex,
+    clearMessageActionError,
+    currentSessionSending,
     sendMessage,
     retryLastMessage,
+    deleteMessage,
     reloadMessages,
   }
 }

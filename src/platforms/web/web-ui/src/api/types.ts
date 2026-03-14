@@ -217,4 +217,5 @@ export interface ChatCallbacks {
   onDone?: () => void
   onError?: (message: string) => void
   onSessionId?: (id: string) => void
+  onAssistantContent?: (message: Message) => void
 }

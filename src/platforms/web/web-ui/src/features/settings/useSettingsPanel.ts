@@ -15,6 +15,7 @@ import {
 import type { CfDnsRecord, ConfigModelOption, CloudflareSslMode } from '../../api/types'
 import { useTheme, type ThemeMode } from '../../composables/useTheme'
 import { loadManagementToken, subscribeManagementTokenChange } from '../../utils/managementToken'
+import { loadAuthToken, subscribeAuthTokenChange } from '../../utils/authToken'
 
 interface UseSettingsPanelOptions {
   onClose: () => void
@@ -23,16 +24,79 @@ interface UseSettingsPanelOptions {
 export function useSettingsPanel(options: UseSettingsPanelOptions) {
   const managementEnabled = ref(false)
   const managementReady = ref(false)
+  const authEnabled = ref(false)
+  const authReady = ref(false)
+  const accessRequirementLoaded = ref(false)
 
   let unsubscribeManagementToken: (() => void) | null = null
+  let unsubscribeAuthToken: (() => void) | null = null
 
-  function refreshManagementState() {
-    const token = loadManagementToken().trim()
-    managementReady.value = !!token
+  function refreshAccessState() {
+    managementReady.value = !!loadManagementToken().trim()
+    authReady.value = !!loadAuthToken().trim()
+  }
+
+  function applyAccessRequirements(status: { authProtected?: boolean; managementProtected?: boolean }) {
+    authEnabled.value = !!status.authProtected
+    managementEnabled.value = !!status.managementProtected
+    accessRequirementLoaded.value = true
+  }
+
+  function rememberAccessRequirementsFromError(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error ?? '未知错误')
+
+    if (message.includes('API 访问令牌')) {
+      authEnabled.value = true
+      accessRequirementLoaded.value = true
+    }
+
+    if (message.includes('管理令牌')) {
+      managementEnabled.value = true
+      accessRequirementLoaded.value = true
+    }
+
+    return message
   }
 
   // ============ 主题 ============
   const { theme: currentTheme, setTheme } = useTheme()
+
+  const accessProtectionEnabled = computed(() => authEnabled.value || managementEnabled.value)
+  const missingAccessTokens = computed(() => {
+    const missing: string[] = []
+    if (authEnabled.value && !authReady.value) missing.push('API 访问令牌')
+    if (managementEnabled.value && !managementReady.value) missing.push('管理令牌')
+    return missing
+  })
+  const accessLocked = computed(() => missingAccessTokens.value.length > 0)
+  const accessStatusText = computed(() => {
+    if (accessRequirementLoaded.value) {
+      if (!accessProtectionEnabled.value) return '未启用'
+      return accessLocked.value ? '未解锁' : '已解锁'
+    }
+
+    return authReady.value || managementReady.value ? '待检测' : '状态待检测'
+  })
+  const accessCredentialHint = computed(() => {
+    if (accessRequirementLoaded.value) {
+      if (!accessProtectionEnabled.value) return '当前后端未启用 Web 访问保护。'
+      if (accessLocked.value) return `请先在侧边栏“访问凭证”中补全${missingAccessTokens.value.join('、')}。`
+      return '当前所需访问凭证已就绪。'
+    }
+
+    if (authReady.value || managementReady.value) {
+      return '已录入本地访问凭证，后端保护状态仍在检测；如相关操作返回 401，请检查访问令牌是否完整。'
+    }
+
+    return '如拉取模型、保存配置或 Cloudflare 管理返回 401，请先在侧边栏“访问凭证”中录入相应令牌。'
+  })
+  const accessLockMessage = computed(() => missingAccessTokens.value.length > 0 ? `当前后端要求先录入${missingAccessTokens.value.join('、')}` : '')
+
+  function formatAccessLockedMessage(action: string): string {
+    return accessLockMessage.value
+      ? `${action}：${accessLockMessage.value}，请先在侧边栏“访问凭证”中补全。`
+      : `${action}：访问凭证未就绪。`
+  }
 
   const themeOptions: { value: ThemeMode; label: string }[] = [
     { value: 'dark', label: '暗色' },
@@ -229,8 +293,8 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
 
   function modelCatalogHint(entry: ModelEntry): string {
     const state = entry.modelCatalog
+    if (accessLocked.value) return `${accessLockMessage.value}，请先在侧边栏“访问凭证”中补全。`
     if (state.error) return state.error
-    if (managementEnabled.value && !managementReady.value) return '管理令牌未解锁，暂时无法拉取模型列表。'
     if (state.options.length > 0) {
       return `已从 ${state.baseUrl} 拉取 ${state.options.length} 个模型${state.usedStoredApiKey ? '（使用已保存 API Key）' : ''}。也可继续手动输入。`
     }
@@ -247,6 +311,12 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     const entry = modelEntries[index]
     if (!entry) return
     const state = entry.modelCatalog
+
+    if (accessLocked.value) {
+      state.error = formatAccessLockedMessage('拉取模型列表失败')
+      return
+    }
+
     const requestVersion = ++entry.modelCatalogRequestVersion
 
     state.loading = true
@@ -296,9 +366,11 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
   const dirty = ref(false)
 
   // ============ MCP ============
+  type MCPTransport = 'stdio' | 'sse' | 'streamable-http'
+
   interface MCPServerEntry {
     name: string
-    transport: 'stdio' | 'http'
+    transport: MCPTransport
     command: string
     args: string // 每行一个参数，保存时转为 string[]
     cwd: string
@@ -313,6 +385,22 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
   const mcpServers = reactive<MCPServerEntry[]>([])
   /** 加载时记录的原始服务器名，用于保存时识别被删除的服务器 */
   const mcpOriginalNames = ref<string[]>([])
+
+  function normalizeMcpTransport(transport: unknown): MCPTransport {
+    if (transport === 'sse' || transport === 'streamable-http') {
+      return transport
+    }
+
+    if (transport === 'http') {
+      return 'streamable-http'
+    }
+
+    return 'stdio'
+  }
+
+  function transportLabel(transport: MCPTransport): string {
+    return transport === 'stdio' ? '本地进程' : (transport === 'sse' ? 'SSE 事件流' : 'Streamable HTTP')
+  }
 
   function addMcpServer() {
     mcpServers.push({
@@ -494,12 +582,14 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
 
   onMounted(() => {
     window.addEventListener('keydown', onKeydown)
-    refreshManagementState()
-    unsubscribeManagementToken = subscribeManagementTokenChange(refreshManagementState)
+    refreshAccessState()
+    unsubscribeManagementToken = subscribeManagementTokenChange(refreshAccessState)
+    unsubscribeAuthToken = subscribeAuthTokenChange(refreshAccessState)
   })
   onUnmounted(() => {
     window.removeEventListener('keydown', onKeydown)
     unsubscribeManagementToken?.()
+    unsubscribeAuthToken?.()
     if (autoSaveTimer) clearTimeout(autoSaveTimer)
   })
 
@@ -510,6 +600,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     if (!configLoaded) return
     if (autoSaveTimer) clearTimeout(autoSaveTimer)
     dirty.value = true
+    if (accessLocked.value) return
     autoSaveTimer = setTimeout(() => {
       if (saving.value) {
         scheduleAutoSave()
@@ -562,7 +653,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
 
   onMounted(async () => {
     try {
-      refreshManagementState()
+      refreshAccessState()
       const data = await getConfig()
       loadModelEntriesFromConfig(data.llm || {})
 
@@ -577,7 +668,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
         for (const [name, cfg] of Object.entries(data.mcp.servers) as [string, any][]) {
           mcpServers.push({
             name,
-            transport: cfg.transport || 'stdio',
+            transport: normalizeMcpTransport(cfg.transport),
             command: cfg.command || '',
             args: Array.isArray(cfg.args) ? cfg.args.join('\n') : '',
             cwd: cfg.cwd || '',
@@ -597,8 +688,11 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       dirty.value = false
       syncMaxToolRoundsInput()
     } catch (err: any) {
+      const detail = rememberAccessRequirementsFromError(err)
       configLoaded = true
-      statusText.value = '加载配置失败: ' + (err?.message || '未知错误')
+      statusText.value = accessLocked.value
+        ? formatAccessLockedMessage('加载配置失败')
+        : '加载配置失败: ' + (detail || '未知错误')
       statusError.value = true
       dirty.value = false
     }
@@ -607,8 +701,9 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     try {
       const status = await getStatus()
       tools.value = status.tools || []
-      managementEnabled.value = !!status.managementProtected
-    } catch {
+      applyAccessRequirements(status)
+    } catch (err: any) {
+      rememberAccessRequirementsFromError(err)
       tools.value = []
     }
   })
@@ -681,6 +776,13 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     statusText.value = ''
     statusError.value = false
 
+    if (accessLocked.value) {
+      statusText.value = formatAccessLockedMessage('保存失败')
+      statusError.value = true
+      saving.value = false
+      return
+    }
+
     const duplicateMcpNames = findDuplicateMcpNames()
     if (duplicateMcpNames.length > 0) {
       statusText.value = `保存失败: MCP 服务器名称重复（${duplicateMcpNames.join('、')}）`
@@ -737,7 +839,8 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
         dirty.value = true
       }
     } catch (err: any) {
-      statusText.value = '保存失败: ' + err.message
+      const detail = rememberAccessRequirementsFromError(err)
+      statusText.value = accessLocked.value ? formatAccessLockedMessage('保存失败') : ('保存失败: ' + detail)
       statusError.value = true
       dirty.value = true
     } finally {
@@ -818,11 +921,12 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
         cf.sslError = false
       }
     } catch (err: any) {
+      rememberAccessRequirementsFromError(err)
       cfDnsRequestVersion += 1
       cfSslRequestVersion += 1
       cfSslMutationVersion += 1
       cf.connected = false
-      cf.error = err?.message || '加载 Cloudflare 状态失败'
+      cf.error = accessLocked.value ? formatAccessLockedMessage('加载 Cloudflare 状态失败') : (err?.message || '加载 Cloudflare 状态失败')
       cf.dnsRecords = []
       cf.dnsSaving = false
       cf.dnsDeletingId = null
@@ -844,9 +948,10 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       if (requestVersion !== cfDnsRequestVersion) return
       cf.dnsRecords = result.records || []
     } catch (err: any) {
+      rememberAccessRequirementsFromError(err)
       if (requestVersion !== cfDnsRequestVersion) return
       cf.dnsRecords = []
-      cf.dnsMsg = '加载 DNS 记录失败: ' + err.message
+      cf.dnsMsg = accessLocked.value ? formatAccessLockedMessage('加载 DNS 记录失败') : ('加载 DNS 记录失败: ' + err.message)
       cf.dnsError = true
     } finally {
       if (requestVersion === cfDnsRequestVersion) {
@@ -874,10 +979,11 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       cf.sslMode = nextMode
       committedSslMode = nextMode
     } catch (err: any) {
+      rememberAccessRequirementsFromError(err)
       if (requestVersion !== cfSslRequestVersion) return
       cf.sslMode = 'unknown'
       committedSslMode = 'unknown'
-      cf.sslMsg = '读取当前 SSL 模式失败：' + (err?.message || '未知错误')
+      cf.sslMsg = accessLocked.value ? formatAccessLockedMessage('读取当前 SSL 模式失败') : ('读取当前 SSL 模式失败：' + (err?.message || '未知错误'))
       cf.sslError = true
     } finally {
       if (requestVersion === cfSslRequestVersion) {
@@ -887,6 +993,11 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
   }
 
   async function handleCfSetup() {
+    if (accessLocked.value) {
+      cf.error = formatAccessLockedMessage('连接 Cloudflare 失败')
+      return
+    }
+
     if (!cf.tokenInput.trim()) {
       cf.error = '请输入 Token'
       return
@@ -902,6 +1013,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
         cf.error = result.error || '连接失败'
       }
     } catch (err: any) {
+      rememberAccessRequirementsFromError(err)
       cf.error = err.message
     } finally {
       cf.loading = false
@@ -909,7 +1021,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
   }
 
   async function handleSslChange() {
-    if (cf.sslMode === 'unknown' || cf.sslLoading || cf.sslSaving) return
+    if (accessLocked.value || cf.sslMode === 'unknown' || cf.sslLoading || cf.sslSaving) return
     const requestVersion = ++cfSslMutationVersion
     const zoneId = cf.activeZoneId
     const targetMode = cf.sslMode as CloudflareSslMode
@@ -924,12 +1036,13 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       cf.sslMode = targetMode
       cf.sslMsg = 'SSL 模式已更新'
     } catch (err: any) {
+      rememberAccessRequirementsFromError(err)
       if (requestVersion !== cfSslMutationVersion) return
       committedSslMode = previousMode
       if (zoneId === cf.activeZoneId) {
         cf.sslMode = previousMode
       }
-      cf.sslMsg = '更新失败: ' + err.message
+      cf.sslMsg = accessLocked.value ? formatAccessLockedMessage('更新 SSL 模式失败') : ('更新失败: ' + err.message)
       cf.sslError = true
     } finally {
       if (requestVersion === cfSslMutationVersion) cf.sslSaving = false
@@ -937,6 +1050,12 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
   }
 
   async function handleDnsAdd() {
+    if (accessLocked.value) {
+      cf.dnsMsg = formatAccessLockedMessage('添加 DNS 记录失败')
+      cf.dnsError = true
+      return
+    }
+
     if (cf.dnsSaving || cf.dnsDeletingId) return
     if (!dnsProxySupported.value) cf.newDns.proxied = false
     if (!cf.newDns.name || !cf.newDns.content) {
@@ -956,6 +1075,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
         cf.dnsMsg = '添加成功'
       }
     } catch (err: any) {
+      rememberAccessRequirementsFromError(err)
       cf.dnsMsg = '添加失败: ' + err.message
       cf.dnsError = true
     } finally {
@@ -969,6 +1089,12 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
   }
 
   async function handleDnsDelete(id: string) {
+    if (accessLocked.value) {
+      cf.dnsMsg = formatAccessLockedMessage('删除 DNS 记录失败')
+      cf.dnsError = true
+      return
+    }
+
     if (cf.dnsSaving || cf.dnsDeletingId) return
     cf.dnsMsg = ''
     cf.dnsError = false
@@ -978,6 +1104,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       cf.dnsRecords = cf.dnsRecords.filter(r => r.id !== id)
       cf.dnsMsg = '已删除'
     } catch (err: any) {
+      rememberAccessRequirementsFromError(err)
       cf.dnsMsg = '删除失败: ' + err.message
       cf.dnsError = true
     } finally {
@@ -1004,8 +1131,14 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
   return {
     managementEnabled,
     managementReady,
+    authEnabled,
+    authReady,
     currentTheme,
     setTheme,
+    accessProtectionEnabled,
+    accessLocked,
+    accessStatusText,
+    accessCredentialHint,
     themeOptions,
     themeHint,
     config,
@@ -1018,6 +1151,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     providerLabel,
     addModelEntry,
     removeModelEntry,
+    transportLabel,
     handleModelProviderChange,
     fetchModelOptions,
     modelCatalogHint,

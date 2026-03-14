@@ -282,6 +282,7 @@ function dispatchChatStreamEvent(rawBlock: string, callbacks: ChatCallbacks): vo
     switch (event.type) {
       case 'delta': callbacks.onDelta?.(event.text); break
       case 'message': callbacks.onMessage?.(event.text); break
+      case 'assistant_content': callbacks.onAssistantContent?.(event.message); break
       case 'stream_end': callbacks.onStreamEnd?.(); break
       case 'done': callbacks.onDone?.(); break
       case 'error': callbacks.onError?.(event.message); break

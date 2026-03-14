@@ -58,6 +58,42 @@ const DEFAULT_CHAT_SUGGESTIONS: ChatSuggestion[] = [
   { label: '校验结果', text: '请检查当前结论是否有遗漏，并给出我应该优先补充的内容。' },
 ];
 
+const WORKSPACE_MUTATION_TOOL_NAMES = [
+  'write_file',
+  'apply_diff',
+  'insert_code',
+  'delete_code',
+  'create_directory',
+  'delete_file',
+];
+
+const WORKSPACE_MUTATION_INTENT_PATTERNS: RegExp[] = [
+  /(保存|写入|落地|导出|输出到|写到).{0,20}(文件|目录|项目|仓库|工程|磁盘|本地|工作区)/i,
+  /(创建|新建|生成).{0,12}(文件|目录)/i,
+  /(修改|编辑|更新|重构|修复|实现|新增|删除|移除|插入|替换|打补丁|应用补丁).{0,16}(代码|源码|文件|目录|项目|仓库|工程|组件|模块|函数|样式|配置|脚本|bug|问题|功能)/i,
+  /\b(write|save|create|edit|modify|update|refactor|fix|implement|insert|delete|remove|patch)\b.{0,24}\b(file|code|project|repo|repository|directory|folder|bug|issue|feature)\b/i,
+  /(修改|编辑|更新|重构|修复|新增|删除|替换|写入).{0,24}(?:src|docs|scripts|deploy)\/[\w./-]+/i,
+  /(修改|编辑|更新|重构|修复|新增|删除|替换|写入).{0,24}[\w./-]+\.(?:ts|tsx|js|jsx|vue|css|scss|json|ya?ml|md|txt|html|py|java|go|rs|c|cpp)/i,
+  /(?:src|docs|scripts|deploy)\/[\w./-]+\s*(?:里|中|内)?\s*(修改|编辑|更新|修复|重构|新增|删除|替换|写入)/i,
+  /(?:[\w./-]+\.(?:ts|tsx|js|jsx|vue|css|scss|json|ya?ml|md|txt|html|py|java|go|rs|c|cpp))\s*(修改|编辑|更新|修复|重构|新增|删除|替换|写入)/i,
+];
+
+function shouldAllowWorkspaceMutation(userText: string): boolean {
+  const normalized = userText.trim();
+  if (!normalized) return false;
+  return WORKSPACE_MUTATION_INTENT_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function buildRequestScopedTools(baseTools: ToolRegistry, allowWorkspaceMutation: boolean): ToolRegistry {
+  if (allowWorkspaceMutation) return baseTools;
+  return baseTools.createFiltered(WORKSPACE_MUTATION_TOOL_NAMES);
+}
+
+function buildWorkspaceMutationGuidance(allowWorkspaceMutation: boolean): string {
+  if (allowWorkspaceMutation) return '';
+  return '本轮若用户没有明确要求修改、创建、删除或保存工作区文件，请不要调用会落地到本地文件系统的写入型工具。普通问答请直接在对话中给出结果；如果用户需要文件，请提示其通过 GUI 的下载按钮导出。';
+}
+
 interface ThoughtTimingState {
   activeStartedAt?: number;
 }
@@ -355,9 +391,19 @@ export class Backend extends EventEmitter {
     return this.storage.listSessions();
   }
 
-  /** 使用 light 层级生成输入框快捷建议 */
+  /**
+   * 生成输入框快捷建议。
+   *
+   * 历史上这里固定使用名为 light 的轻量模型层级。
+   * 现在模型池名称已完全自定义，因此改为：
+   * 1. 优先使用名为 light 的模型（兼容旧习惯）
+   * 2. 若不存在，则回退到当前活动模型
+   */
   async generateChatSuggestions(sessionId?: string | null): Promise<ChatSuggestion[]> {
     try {
+      const suggestionModelName = this.router.hasModel('light')
+        ? 'light'
+        : this.router.getCurrentModelName();
       const history = sessionId ? await this.storage.getHistory(sessionId) : [];
       const request: LLMRequest = {
         systemInstruction: {
@@ -370,7 +416,11 @@ export class Backend extends EventEmitter {
         },
       };
 
-      const response = await this.router.chat(request, 'light');
+      if (suggestionModelName !== 'light') {
+        logger.debug(`快捷建议未配置 light 模型，回退使用当前模型: ${suggestionModelName}`);
+      }
+
+      const response = await this.router.chat(request, suggestionModelName);
       return ensureChatSuggestions(parseChatSuggestions(extractText(response.content.parts)));
     } catch (err) {
       logger.warn('生成聊天快捷建议失败:', err);
@@ -530,18 +580,24 @@ export class Backend extends EventEmitter {
     const storedHistory = await this.storage.getHistory(sessionId);
     const history = this.prepareHistoryForLLM(storedHistory);
     const isNewSession = storedHistory.length === 0;
+    const userText = extractText(llmUserParts);
+    const allowWorkspaceMutation = shouldAllowWorkspaceMutation(userText);
     history.push({ role: 'user', parts: llmUserParts });
 
     // 2. 构建 per-request 额外上下文
     let extraParts: Part[] | undefined;
 
+    const workspaceMutationGuidance = buildWorkspaceMutationGuidance(allowWorkspaceMutation);
+    if (workspaceMutationGuidance) {
+      extraParts = [{ text: workspaceMutationGuidance }];
+    }
+
     // 记忆自动召回
     if (this.memory && this.autoRecall) {
       try {
-        const userText = extractText(llmUserParts);
         const context = await this.memory.buildContext(userText);
         if (context) {
-          extraParts = [{ text: context }];
+          extraParts = [...(extraParts ?? []), { text: context }];
         }
       } catch (err) {
         logger.warn('查询记忆失败:', err);
@@ -579,12 +635,15 @@ export class Backend extends EventEmitter {
     };
 
     // 4. 解析模式工具过滤
+    let requestTools = mode?.tools ? applyToolFilter(mode, this.tools) : this.tools;
+    requestTools = buildRequestScopedTools(requestTools, allowWorkspaceMutation);
+
     let loop = this.toolLoop;
     if (mode?.tools) {
-      const filteredTools = applyToolFilter(mode, this.tools);
-      loop = new ToolLoop(filteredTools, this.prompt, this.toolLoopConfig, this.toolState);
+      loop = new ToolLoop(requestTools, this.prompt, this.toolLoopConfig, this.toolState);
+    } else if (requestTools !== this.tools) {
+      loop = new ToolLoop(requestTools, this.prompt, this.toolLoopConfig, this.toolState);
     }
-
     // 5. 立即持久化用户消息（不等工具循环结束，防止中途中断丢失）
     await this.storage.addMessage(sessionId, { role: 'user', parts: storedUserParts });
     if (isNewSession) {

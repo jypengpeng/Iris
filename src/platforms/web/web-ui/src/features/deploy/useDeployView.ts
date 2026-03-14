@@ -18,6 +18,17 @@ import type {
 } from '../../api/types'
 import { loadManagementToken, subscribeManagementTokenChange } from '../../utils/managementToken'
 import { loadAuthToken, subscribeAuthTokenChange } from '../../utils/authToken'
+import { copyTextToClipboard } from '../../utils/clipboard'
+
+function createDefaultDetectState(): DetectResponse {
+  return {
+    isLinux: false,
+    isLocal: false,
+    nginx: { installed: false, version: '', configDir: '', existingConfig: false },
+    systemd: { available: false, existingService: false, serviceStatus: '' },
+    sudo: { available: false, noPassword: false },
+  }
+}
 
 export function useDeployView() {
   const form = reactive<DeployFormOptions>({
@@ -41,21 +52,17 @@ export function useDeployView() {
   // 环境检测
   const detectLoaded = ref(false)
   const detectError = ref('')
-  const detect = reactive<DetectResponse>({
-    isLinux: false,
-    isLocal: false,
-    nginx: { installed: false, version: '', configDir: '', existingConfig: false },
-    systemd: { available: false, existingService: false, serviceStatus: '' },
-    sudo: { available: false, noPassword: false },
-  })
+  const detect = reactive<DetectResponse>(createDefaultDetectState())
 
   // 部署默认值加载
   const formReady = ref(false)
+  const formDirty = ref(false)
   const stateError = ref('')
 
   // 统一预览
   const previewLoaded = ref(false)
   const previewLoading = ref(false)
+  const lastLoadedDeployStateFingerprint = ref('')
   const preview = reactive<DeployPreviewResponse>({
     options: {
       domain: 'chat.example.com',
@@ -111,6 +118,20 @@ export function useDeployView() {
     authProtected.value = !!status.authProtected
     managementProtected.value = !!status.managementProtected
     accessRequirementLoaded.value = true
+  }
+
+  async function reloadProtectedStateAfterCredentialChange() {
+    await Promise.all([
+      loadDetect(),
+      loadDeployState({ overwriteForm: !formDirty.value }),
+      loadAccessRequirements(),
+    ])
+    await refreshPreview()
+  }
+
+  function handleCredentialStorageChange() {
+    refreshCredentialState()
+    void reloadProtectedStateAfterCredentialChange()
   }
 
   const managementNotice = computed(() => {
@@ -195,7 +216,45 @@ export function useDeployView() {
     }
   }
 
+  function serializeDeployOptions(options: DeployFormOptions): string {
+    return JSON.stringify({
+      domain: options.domain,
+      port: clampPort(options.port),
+      deployPath: options.deployPath,
+      user: options.user,
+      enableHttps: options.enableHttps,
+      enableAuth: options.enableAuth,
+    })
+  }
+
+  function syncFormDirtyState() {
+    formDirty.value = serializeDeployOptions(buildDeployOptions()) !== lastLoadedDeployStateFingerprint.value
+  }
+
+  function applyLoadedDeployState(defaults: DeployFormOptions, overwriteForm: boolean) {
+    const normalizedDefaults: DeployFormOptions = {
+      domain: defaults.domain,
+      port: clampPort(defaults.port),
+      deployPath: defaults.deployPath,
+      user: defaults.user,
+      enableHttps: defaults.enableHttps,
+      enableAuth: defaults.enableAuth,
+    }
+
+    lastLoadedDeployStateFingerprint.value = serializeDeployOptions(normalizedDefaults)
+    if (!overwriteForm) return
+
+    Object.assign(form, normalizedDefaults)
+    syncPortInput()
+    formDirty.value = false
+  }
+
+  lastLoadedDeployStateFingerprint.value = serializeDeployOptions(buildDeployOptions())
+
   let previewRequestId = 0
+  let detectRequestId = 0
+  let deployStateRequestId = 0
+  let accessRequirementsRequestId = 0
   let previewTimer: ReturnType<typeof setTimeout> | null = null
   let copyResetTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -251,7 +310,12 @@ export function useDeployView() {
     }, 150)
   }
 
-  watch(form, schedulePreview, { deep: true })
+  watch(form, () => {
+    if (formReady.value) {
+      syncFormDirtyState()
+    }
+    schedulePreview()
+  }, { deep: true })
 
   onUnmounted(() => {
     if (previewTimer) clearTimeout(previewTimer)
@@ -262,42 +326,59 @@ export function useDeployView() {
 
   onMounted(async () => {
     refreshCredentialState()
-    unsubscribeManagementToken = subscribeManagementTokenChange(refreshCredentialState)
-    unsubscribeAuthToken = subscribeAuthTokenChange(refreshCredentialState)
+    unsubscribeManagementToken = subscribeManagementTokenChange(handleCredentialStorageChange)
+    unsubscribeAuthToken = subscribeAuthTokenChange(handleCredentialStorageChange)
 
-    await Promise.all([loadDetect(), loadDeployState(), loadAccessRequirements()])
+    await Promise.all([loadDetect(), loadDeployState({ overwriteForm: true }), loadAccessRequirements()])
     formReady.value = true
     await refreshPreview()
   })
 
   async function loadDetect() {
+    const requestId = ++detectRequestId
+    detectLoaded.value = false
+    detectError.value = ''
+
     try {
       const result = await detectDeploy()
-      Object.assign(detect, result)
+      if (requestId !== detectRequestId) return
+      Object.assign(detect, createDefaultDetectState(), result)
+      detectError.value = ''
       detectLoaded.value = true
     } catch (e: any) {
+      if (requestId !== detectRequestId) return
+      Object.assign(detect, createDefaultDetectState())
       detectError.value = e.message || '未知错误'
-      detectLoaded.value = true
+      detectLoaded.value = false
     }
   }
 
-  async function loadDeployState() {
+  async function loadDeployState(options: { overwriteForm?: boolean } = {}) {
+    const requestId = ++deployStateRequestId
+    const overwriteForm = options.overwriteForm ?? true
+
     try {
       const result = await getDeployState()
+      if (requestId !== deployStateRequestId) return
       runtimeWeb.host = result.web.host
       runtimeWeb.port = result.web.port
-      Object.assign(form, result.defaults)
-      syncPortInput()
+      stateError.value = ''
+      applyLoadedDeployState(result.defaults, overwriteForm)
     } catch (e: any) {
+      if (requestId !== deployStateRequestId) return
       stateError.value = e.message || '未知错误'
     }
   }
 
   async function loadAccessRequirements() {
+    const requestId = ++accessRequirementsRequestId
+
     try {
       const status = await getStatus()
+      if (requestId !== accessRequirementsRequestId) return
       applyAccessRequirements(status)
     } catch {
+      if (requestId !== accessRequirementsRequestId) return
       accessRequirementLoaded.value = false
       authProtected.value = false
       managementProtected.value = false
@@ -319,8 +400,8 @@ export function useDeployView() {
   })
 
   const environmentDisabledReason = computed(() => {
-    if (!detectLoaded.value) return '环境检测中...'
     if (detectError.value) return `环境检测失败: ${detectError.value}`
+    if (!detectLoaded.value) return '环境检测中...'
     if (!detect.isLinux) return '仅支持 Linux 系统'
     if (!detect.isLocal) return '仅允许本地访问'
     if (!detect.sudo.available) return 'sudo 未安装'
@@ -441,7 +522,7 @@ export function useDeployView() {
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(currentPreviewContent.value)
+      await copyTextToClipboard(currentPreviewContent.value)
       copyText.value = '已复制'
       scheduleCopyReset()
     } catch {

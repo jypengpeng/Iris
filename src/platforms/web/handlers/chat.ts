@@ -134,7 +134,7 @@ export function createChatHandler(platform: WebPlatform) {
     }
 
     if (documents === null) {
-      sendJSON(res, 400, { error: '文档参数无效：最多支持 10 个文档（PDF/DOCX/PPTX/XLSX），且单个不超过 50MB' });
+      sendJSON(res, 400, { error: '文档参数无效：最多支持 10 个文档（PDF / Office / Markdown / JSON / XML / Python 等文本代码文件），且单个不超过 50MB' });
       return;
     }
 

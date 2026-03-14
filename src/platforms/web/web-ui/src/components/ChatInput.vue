@@ -4,7 +4,7 @@
       ref="fileInputEl"
       class="sr-only"
       type="file"
-      accept="image/*,.pdf,.docx,.pptx,.xlsx,.xls"
+      :accept="SUPPORTED_UPLOAD_ACCEPT"
       multiple
       :disabled="interactionDisabled"
       @change="handleFileSelection"
@@ -22,7 +22,7 @@
         <div class="input-drag-mask-card">
           <AppIcon :name="ICONS.common.attach" class="input-drag-mask-icon" />
           <strong>释放即可附加到当前对话</strong>
-          <span>支持图片、PDF 与 Office 文档</span>
+          <span>支持图片、PDF、Office，以及 Markdown / JSON / XML / Python 等文本代码文件</span>
         </div>
       </div>
 
@@ -37,16 +37,20 @@
       </div>
 
       <div v-if="showQuickPromptBar" class="input-quick-actions">
-        <button
-          v-if="showQuickPrompts"
-          v-for="prompt in quickPrompts"
-          :key="prompt.text"
-          class="input-quick-chip"
-          type="button"
-          @click="applyQuickPrompt(prompt.text)"
-        >
-          {{ prompt.label }}
-        </button>
+        <div class="input-quick-prompt-list" :class="{ disabled: !quickPromptsEnabled }">
+          <button
+            v-for="prompt in quickPrompts"
+            :key="prompt.text"
+            class="input-quick-chip"
+            :class="{ disabled: !quickPromptsEnabled }"
+            type="button"
+            :disabled="!quickPromptsEnabled"
+            :aria-disabled="!quickPromptsEnabled"
+            @click="applyQuickPrompt(prompt.text)"
+          >
+            {{ prompt.label }}
+          </button>
+        </div>
         <span
           v-if="quickPromptsEnabled && quickPromptsLoading"
           class="input-quick-status"
@@ -56,12 +60,18 @@
           正在生成建议...
         </span>
         <button
-          class="input-quick-chip input-quick-toggle"
+          class="input-quick-switch"
           :class="{ active: quickPromptsEnabled }"
           type="button"
-          :aria-pressed="quickPromptsEnabled"
+          role="switch"
+          :aria-checked="quickPromptsEnabled"
           @click="toggleQuickPrompts"
-        >{{ quickPromptsEnabled ? '关闭建议' : '开启建议' }}</button>
+        >
+          <span class="input-quick-switch-track" aria-hidden="true">
+            <span class="input-quick-switch-thumb"></span>
+          </span>
+          <span class="input-quick-switch-label">{{ quickPromptsEnabled ? '建议已开' : '建议已关' }}</span>
+        </button>
       </div>
 
       <div v-if="images.length > 0 || documents.length > 0" class="input-attachment-summary">
@@ -169,6 +179,16 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const MAX_DOCUMENTS = 10
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024
 const SUPPORTED_DOC_EXTENSIONS = ['.pdf', '.docx', '.pptx', '.xlsx', '.xls']
+const SUPPORTED_TEXT_EXTENSIONS = [
+  '.txt', '.md', '.markdown',
+  '.json', '.jsonc',
+  '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.env',
+  '.xml', '.svg', '.html', '.htm', '.csv', '.tsv', '.log',
+  '.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
+  '.java', '.c', '.h', '.cpp', '.hpp', '.cc', '.cs', '.go', '.rs', '.php', '.rb',
+  '.sh', '.bash', '.zsh', '.ps1',
+  '.sql', '.css', '.scss', '.less', '.vue',
+]
 const SUPPORTED_DOC_MIMES = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -176,6 +196,25 @@ const SUPPORTED_DOC_MIMES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
 ])
+const SUPPORTED_TEXT_MIMES = new Set([
+  'text/markdown',
+  'text/x-markdown',
+  'application/json',
+  'application/ld+json',
+  'application/xml',
+  'image/svg+xml',
+  'application/x-yaml',
+  'text/yaml',
+  'text/x-yaml',
+  'application/toml',
+  'text/x-toml',
+  'application/javascript',
+  'application/x-javascript',
+  'application/x-sh',
+  'application/x-shellscript',
+  'application/sql',
+])
+const SUPPORTED_UPLOAD_ACCEPT = Array.from(new Set(['image/*', ...SUPPORTED_DOC_EXTENSIONS, ...SUPPORTED_TEXT_EXTENSIONS])).join(',')
 
 const fallbackQuickPrompts: ChatSuggestion[] = [
   { label: '继续推进', text: '请基于刚才的内容继续推进，并告诉我下一步最值得做什么。' },
@@ -184,6 +223,7 @@ const fallbackQuickPrompts: ChatSuggestion[] = [
 ]
 
 const QUICK_PROMPTS_ENABLED_STORAGE_KEY = 'iris-chat-quick-prompts-enabled'
+const QUICK_PROMPT_CACHE_FALLBACK_KEY = '__new__'
 
 const props = defineProps<{ disabled: boolean }>()
 const emit = defineEmits<{ send: [text: string, images?: ImageInput[], documents?: DocumentInput[]] }>()
@@ -202,12 +242,12 @@ const quickPrompts = ref<ChatSuggestion[]>(fallbackQuickPrompts.map((prompt) => 
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const fileInputEl = ref<HTMLInputElement | null>(null)
 let dragDepth = 0
+const quickPromptCache = new Map<string, ChatSuggestion[]>()
 let quickPromptLoadVersion = 0
 
 const interactionDisabled = computed(() => disabled.value || attachmentsProcessing.value)
 const canSend = computed(() => !attachmentsProcessing.value && (text.value.trim().length > 0 || images.value.length > 0 || documents.value.length > 0))
 const showQuickPromptBar = computed(() => !interactionDisabled.value && !text.value.trim() && images.value.length === 0 && documents.value.length === 0)
-const showQuickPrompts = computed(() => showQuickPromptBar.value && quickPromptsEnabled.value)
 const sendButtonText = computed(() => {
   if (disabled.value) return '生成中...'
   if (attachmentsProcessing.value) return '处理中...'
@@ -222,7 +262,7 @@ const statusBadgeText = computed(() => {
 const uploadHintText = computed(() => {
   if (disabled.value) return '当前回答完成前，附件与输入将暂时锁定。'
   if (attachmentsProcessing.value) return '正在处理附件，请稍候后再发送或继续上传。'
-  return `支持拖拽 / 粘贴上传 · 图片最多 ${MAX_IMAGES} 张(5MB) · 文档最多 ${MAX_DOCUMENTS} 个(50MB)`
+  return `支持拖拽 / 粘贴上传 · 图片最多 ${MAX_IMAGES} 张(5MB) · 文档/文本代码文件最多 ${MAX_DOCUMENTS} 个(50MB)`
 })
 const attachmentSummary = computed(() => {
   const parts: string[] = []
@@ -243,10 +283,18 @@ function toImageSrc(image: ImageInput): string {
   return `data:${image.mimeType};base64,${image.data}`
 }
 
+function normalizeMimeType(mimeType: string): string {
+  return mimeType.split(';', 1)[0].trim().toLowerCase()
+}
+
 function isDocumentFile(file: File): boolean {
-  if (SUPPORTED_DOC_MIMES.has(file.type)) return true
+  const normalizedMimeType = normalizeMimeType(file.type)
+  if (SUPPORTED_DOC_MIMES.has(normalizedMimeType)) return true
+  if (normalizedMimeType.startsWith('text/')) return true
+  if (SUPPORTED_TEXT_MIMES.has(normalizedMimeType)) return true
+
   const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0]
-  return ext ? SUPPORTED_DOC_EXTENSIONS.includes(ext) : false
+  return ext ? (SUPPORTED_DOC_EXTENSIONS.includes(ext) || SUPPORTED_TEXT_EXTENSIONS.includes(ext)) : false
 }
 
 function focusComposer() {
@@ -266,6 +314,26 @@ function loadQuickPromptsEnabled(): boolean {
 
 function cloneFallbackQuickPrompts(): ChatSuggestion[] {
   return fallbackQuickPrompts.map((prompt) => ({ ...prompt }))
+}
+
+function cloneQuickPrompts(prompts: ChatSuggestion[]): ChatSuggestion[] {
+  return prompts.map((prompt) => ({ ...prompt }))
+}
+
+function getQuickPromptCacheKey(): string {
+  const sessionId = currentSessionId.value?.trim()
+  return sessionId || QUICK_PROMPT_CACHE_FALLBACK_KEY
+}
+
+function restoreQuickPromptsFromCache(): boolean {
+  const cached = quickPromptCache.get(getQuickPromptCacheKey())
+  if (!cached || cached.length === 0) {
+    quickPrompts.value = cloneFallbackQuickPrompts()
+    return false
+  }
+
+  quickPrompts.value = cloneQuickPrompts(cached)
+  return true
 }
 
 function normalizeQuickPromptLabel(text: string, fallbackText = ''): string {
@@ -327,7 +395,6 @@ async function loadQuickPrompts() {
   if (!quickPromptsEnabled.value) {
     quickPromptLoadVersion += 1
     quickPromptsLoading.value = false
-    quickPrompts.value = cloneFallbackQuickPrompts()
     return
   }
 
@@ -337,10 +404,14 @@ async function loadQuickPrompts() {
   try {
     const data = await api.getChatSuggestions(currentSessionId.value)
     if (requestVersion !== quickPromptLoadVersion) return
-    quickPrompts.value = normalizeQuickPrompts(data.suggestions)
+    const normalizedPrompts = normalizeQuickPrompts(data.suggestions)
+    quickPrompts.value = normalizedPrompts
+    quickPromptCache.set(getQuickPromptCacheKey(), cloneQuickPrompts(normalizedPrompts))
   } catch {
     if (requestVersion !== quickPromptLoadVersion) return
-    quickPrompts.value = normalizeQuickPrompts([])
+    const normalizedPrompts = normalizeQuickPrompts([])
+    quickPrompts.value = normalizedPrompts
+    quickPromptCache.set(getQuickPromptCacheKey(), cloneQuickPrompts(normalizedPrompts))
   } finally {
     if (requestVersion === quickPromptLoadVersion) {
       quickPromptsLoading.value = false
@@ -349,6 +420,7 @@ async function loadQuickPrompts() {
 }
 
 function applyQuickPrompt(prompt: string) {
+  if (!quickPromptsEnabled.value) return
   text.value = prompt
   clearError()
   focusComposer()
@@ -359,13 +431,15 @@ function toggleQuickPrompts() {
 }
 
 onMounted(() => {
-  if (quickPromptsEnabled.value) {
+  const restored = restoreQuickPromptsFromCache()
+  if (quickPromptsEnabled.value && !restored) {
     void loadQuickPrompts()
   }
 })
 
 watch(currentSessionId, () => {
-  if (quickPromptsEnabled.value) {
+  const restored = restoreQuickPromptsFromCache()
+  if (quickPromptsEnabled.value && !restored) {
     void loadQuickPrompts()
   }
 })
@@ -379,7 +453,7 @@ watch(disabled, (value, oldValue) => {
 watch(quickPromptsEnabled, (value) => {
   persistQuickPromptsEnabled(value)
   if (value) {
-    void loadQuickPrompts()
+    restoreQuickPromptsFromCache()
   } else {
     quickPromptLoadVersion += 1
     quickPromptsLoading.value = false

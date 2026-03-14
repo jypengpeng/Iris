@@ -24,6 +24,8 @@ import { createLogger } from '../../logger';
 import { MCPManager } from '../../mcp';
 import { assertManagementToken } from './security/management';
 import { applyRuntimeConfigReload } from '../../config/runtime';
+import { Content } from '../../types';
+import { formatContent } from './message-format';
 
 const logger = createLogger('WebPlatform');
 
@@ -116,6 +118,10 @@ export class WebPlatform extends PlatformAdapter {
 
     this.backend.on('error', (sid: string, message: string) => {
       this.writeSSE(sid, { type: 'error', message });
+    });
+
+    this.backend.on('assistant:content', (sid: string, content: Content) => {
+      this.writeSSE(sid, { type: 'assistant_content', message: formatContent(content) });
     });
 
     this.backend.on('stream:end', (sid: string) => {

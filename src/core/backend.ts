@@ -625,6 +625,7 @@ export class Backend extends EventEmitter {
       } else {
         const response = await this.router.chat(request, modelName);
         content = response.content;
+        content.modelName = modelName || this.router.getCurrentModelName();
         if (response.usageMetadata) {
           content.usageMetadata = response.usageMetadata;
           this.emit('usage', sessionId, response.usageMetadata);
@@ -664,6 +665,7 @@ export class Backend extends EventEmitter {
       const fallbackContent: Content = {
         role: 'model',
         parts: [{ text: result.text }],
+        modelName: this.router.getCurrentModelName(),
       };
       result.history.push(fallbackContent);
       await this.storage.addMessage(sessionId, fallbackContent);
@@ -766,7 +768,11 @@ export class Backend extends EventEmitter {
 
     if (parts.length === 0) parts.push({ text: '' });
 
-    const content: Content = { role: 'model', parts };
+    const content: Content = {
+      role: 'model',
+      parts,
+      modelName: modelName || this.router.getCurrentModelName(),
+    };
     if (usageMetadata) content.usageMetadata = usageMetadata;
     if (
       streamOutputChunkCount >= 3 &&

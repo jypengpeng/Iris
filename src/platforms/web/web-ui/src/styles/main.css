@@ -2952,6 +2952,134 @@ select:focus-visible {
   font-size: 0.9rem;
 }
 
+/* ===== Thought Block (思维链展示) ===== */
+
+.message-thought-block {
+  border-left: 3px solid var(--accent-cyan);
+  padding: 14px 18px;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.message-thought-block:hover {
+  border-left-color: rgba(116, 215, 255, 0.8);
+  background: linear-gradient(180deg, rgba(29, 37, 64, 0.96), rgba(20, 25, 47, 0.92));
+}
+
+.thought-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.thought-label {
+  color: var(--accent-cyan);
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.thought-duration {
+  color: var(--text-tertiary);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.thought-toggle {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.message-thought-block:hover .thought-toggle {
+  opacity: 1;
+}
+
+.thought-content {
+  color: var(--text-secondary);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 4.8em;
+  overflow: hidden;
+  position: relative;
+  transition: max-height 0.3s ease;
+}
+
+.thought-content:not(.expanded)::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2em;
+  background: linear-gradient(to bottom, transparent, rgba(20, 25, 47, 0.95));
+  pointer-events: none;
+}
+
+.thought-content.expanded {
+  max-height: none;
+}
+
+.thought-content.expanded::after {
+  display: none;
+}
+
+:root[data-theme="light"] .message-thought-block {
+  border-left-color: rgba(0, 148, 198, 0.5);
+}
+
+:root[data-theme="light"] .message-thought-block:hover {
+  border-left-color: rgba(0, 148, 198, 0.7);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 247, 252, 0.95));
+}
+
+:root[data-theme="light"] .thought-label {
+  color: #0094c6;
+}
+
+:root[data-theme="light"] .thought-content:not(.expanded)::after {
+  background: linear-gradient(to bottom, transparent, rgba(245, 247, 252, 0.98));
+}
+
+/* ===== Message Performance Meta (性能元数据) ===== */
+
+.message-perf-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 4px 0;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.message-stack-bubble:hover .message-perf-meta {
+  opacity: 1;
+}
+
+.message-perf-item {
+  white-space: nowrap;
+}
+
+.message-perf-item:not(:last-child)::after {
+  content: '·';
+  margin-left: 12px;
+  opacity: 0.4;
+}
+
+:root[data-theme="light"] .message-perf-meta {
+  color: rgba(0, 0, 0, 0.38);
+}
+
 .message-code-shell {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 30px rgba(4, 8, 20, 0.18);
 }

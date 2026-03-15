@@ -168,7 +168,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import type { DocumentInput, ImageInput } from '../api/types'
+import type { ChatDocumentAttachment, ChatImageAttachment } from '../api/types'
 import AppIcon from './AppIcon.vue'
 import { ICONS } from '../constants/icons'
 import { useSessions } from '../composables/useSessions'
@@ -176,7 +176,7 @@ import { SUPPORTED_UPLOAD_ACCEPT, useChatAttachments } from '../composables/useC
 import { useChatQuickPrompts } from '../composables/useChatQuickPrompts'
 
 const props = defineProps<{ disabled: boolean }>()
-const emit = defineEmits<{ send: [text: string, images?: ImageInput[], documents?: DocumentInput[]] }>()
+const emit = defineEmits<{ send: [text: string, images?: ChatImageAttachment[], documents?: ChatDocumentAttachment[]] }>()
 
 const { currentSessionId } = useSessions()
 

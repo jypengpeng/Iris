@@ -5,12 +5,13 @@
  */
 
 import { isOCRTextPart } from '../../ocr';
-import { Content, isTextPart, isInlineDataPart, isFunctionCallPart, isFunctionResponsePart } from '../../types';
+import { Content, isTextPart, isThoughtTextPart, isInlineDataPart, isFunctionCallPart, isFunctionResponsePart } from '../../types';
 import { isDocumentMimeType } from '../../llm/vision';
 
 export interface WebMessagePart {
-  type: 'text' | 'image' | 'document' | 'function_call' | 'function_response'
+  type: 'text' | 'thought' | 'image' | 'document' | 'function_call' | 'function_response'
   text?: string
+  durationMs?: number
   mimeType?: string
   data?: string
   fileName?: string
@@ -20,9 +21,18 @@ export interface WebMessagePart {
   callId?: string
 }
 
+export interface WebMessageMeta {
+  tokenIn?: number
+  tokenOut?: number
+  durationMs?: number
+  streamOutputDurationMs?: number
+  modelName?: string
+}
+
 export interface WebMessage {
   role: 'user' | 'model'
   parts: WebMessagePart[]
+  meta?: WebMessageMeta
 }
 
 function extractDocumentMarkerFileName(text?: string): string | null {
@@ -37,8 +47,24 @@ export function formatContent(content: Content): WebMessage {
   const formatted: WebMessage = { role: content.role, parts: [] }
   const pendingDocumentIndices: number[] = []
 
+  // 提取性能元数据
+  const meta: WebMessageMeta = {}
+  if (content.usageMetadata?.promptTokenCount != null) meta.tokenIn = content.usageMetadata.promptTokenCount
+  if (content.usageMetadata?.candidatesTokenCount != null) meta.tokenOut = content.usageMetadata.candidatesTokenCount
+  if (content.durationMs != null) meta.durationMs = content.durationMs
+  if (content.streamOutputDurationMs != null) meta.streamOutputDurationMs = content.streamOutputDurationMs
+  if (content.modelName) meta.modelName = content.modelName
+  if (Object.keys(meta).length > 0) formatted.meta = meta
+
   for (const part of content.parts) {
     if (isOCRTextPart(part)) {
+      continue
+    }
+
+    if (isThoughtTextPart(part)) {
+      if (part.text?.trim()) {
+        formatted.parts.push({ type: 'thought', text: part.text, durationMs: part.thoughtDurationMs })
+      }
       continue
     }
 

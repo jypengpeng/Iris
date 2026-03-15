@@ -22,7 +22,7 @@ import { ICONS } from '../constants/icons'
 const props = defineProps<{
   role: 'user' | 'model'
   mimeType: string
-  data: string
+  data?: string
   fileName?: string
 }>()
 

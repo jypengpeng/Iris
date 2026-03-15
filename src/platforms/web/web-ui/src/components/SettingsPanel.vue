@@ -83,9 +83,12 @@
                   <label>模型 ID</label>
                   <div class="inline-field-actions">
                     <input type="text" v-model="entry.modelId" placeholder="例如：gpt-4o 或 gemini-2.0-flash" />
-                    <button class="btn-inline-action" type="button"
-                            :disabled="entry.modelCatalog.loading || accessLocked"
-                            @click="fetchModelOptions(index)">
+                    <button
+                      class="btn-inline-action"
+                      type="button"
+                      :disabled="entry.modelCatalog.loading || accessLocked"
+                      @click="fetchModelOptions(index)"
+                    >
                       {{ entry.modelCatalog.loading ? '拉取中...' : '拉取列表' }}
                     </button>
                   </div>
@@ -200,8 +203,10 @@
               <div class="settings-grid two-columns">
                 <div class="form-group">
                   <label>服务器名称</label>
-                  <input type="text" v-model="server.name" placeholder="仅字母、数字、下划线"
-                         @input="sanitizeMcpName(server)" />
+                  <input
+                    type="text" v-model="server.name" placeholder="仅字母、数字、下划线"
+                    @input="sanitizeMcpName(server)"
+                  />
                 </div>
                 <div class="form-group">
                   <label>传输方式</label>
@@ -222,8 +227,10 @@
                   </div>
                   <div class="form-group full-width">
                     <label>参数（每行一个）</label>
-                    <textarea v-model="server.args" rows="3"
-                              placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/path/to/dir"></textarea>
+                    <textarea
+                      v-model="server.args" rows="3"
+                      placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/path/to/dir"
+                    ></textarea>
                   </div>
                 </template>
 
@@ -260,6 +267,126 @@
         <section class="settings-section">
           <div class="settings-section-head">
             <div>
+              <h3>子代理类型</h3>
+              <p>自定义子代理类型，定义独立的系统提示词、工具策略和调度行为。</p>
+            </div>
+            <span class="settings-pill">{{ subAgentEntries.length }} 个类型</span>
+          </div>
+
+          <div v-for="(entry, idx) in subAgentEntries" :key="entry.uid" class="tier-block">
+            <div class="tier-header" @click="entry.open = !entry.open">
+              <span class="tier-arrow" :class="{ open: entry.open }">▶</span>
+              <span class="tier-label">{{ entry.name || '未命名' }}</span>
+              <span class="tier-desc">{{ entry.description || '无描述' }}</span>
+              <button class="btn-mcp-remove" type="button" @click.stop="removeSubAgentEntry(idx)" title="删除子代理类型">
+                <AppIcon :name="ICONS.common.close" />
+              </button>
+            </div>
+            <div v-show="entry.open" class="tier-body">
+              <div class="settings-grid two-columns">
+                <div class="form-group">
+                  <label>类型名称</label>
+                  <input type="text" v-model="entry.name" placeholder="例如：general-purpose" />
+                </div>
+                <div class="form-group">
+                  <label>固定模型（可选）</label>
+                  <input type="text" v-model="entry.modelName" placeholder="留空则跟随当前活动模型" />
+                </div>
+                <div class="form-group full-width">
+                  <label>描述</label>
+                  <input type="text" v-model="entry.description" placeholder="面向主 LLM 的用途说明" />
+                </div>
+                <div class="form-group full-width">
+                  <label>系统提示词</label>
+                  <textarea v-model="entry.systemPrompt" rows="4" placeholder="子代理的系统提示词"></textarea>
+                </div>
+                <div class="form-group">
+                  <label>工具策略</label>
+                  <AppSelect v-model="entry.toolMode" :options="subAgentToolModeOptions" />
+                </div>
+                <div class="form-group">
+                  <label>最大工具轮次</label>
+                  <input
+                    type="number"
+                    :value="entry.maxToolRoundsInput"
+                    min="1"
+                    max="999"
+                    @input="handleSubAgentMaxToolRoundsInput(entry, $event)"
+                    @blur="syncSubAgentMaxToolRoundsInput(entry)"
+                  />
+                </div>
+                <div class="form-group full-width" v-if="entry.toolMode !== 'all'">
+                  <label>{{ entry.toolMode === 'allowed' ? '工具白名单' : '工具黑名单' }}（每行一个）</label>
+                  <textarea v-model="entry.toolList" rows="3" placeholder="read_file&#10;shell&#10;..."></textarea>
+                </div>
+                <div class="settings-switch-row">
+                  <div>
+                    <span class="switch-label">并行调度</span>
+                    <p class="field-hint">开启后该类型的 sub_agent 调用将参与 parallel 调度。</p>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" v-model="entry.parallel" />
+                    <span class="toggle-switch-ui"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn-mcp-add" type="button" @click="addSubAgentEntry">+ 新增子代理类型</button>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-section-head">
+            <div>
+              <h3>模式</h3>
+              <p>定义不同模式的系统提示词和工具策略，通过 /mode 切换。</p>
+            </div>
+            <span class="settings-pill">{{ modeEntries.length }} 个模式</span>
+          </div>
+
+          <div v-for="(entry, idx) in modeEntries" :key="entry.uid" class="tier-block">
+            <div class="tier-header" @click="entry.open = !entry.open">
+              <span class="tier-arrow" :class="{ open: entry.open }">▶</span>
+              <span class="tier-label">{{ entry.name || '未命名' }}</span>
+              <span class="tier-desc">{{ entry.description || '无描述' }}</span>
+              <button class="btn-mcp-remove" type="button" @click.stop="removeModeEntry(idx)" title="删除模式">
+                <AppIcon :name="ICONS.common.close" />
+              </button>
+            </div>
+            <div v-show="entry.open" class="tier-body">
+              <div class="settings-grid two-columns">
+                <div class="form-group full-width">
+                  <label>模式名称</label>
+                  <input type="text" v-model="entry.name" placeholder="例如：code" />
+                  <p class="field-hint">名称「normal」为保留名称，不可使用。</p>
+                </div>
+                <div class="form-group full-width">
+                  <label>描述（可选）</label>
+                  <input type="text" v-model="entry.description" placeholder="模式用途说明" />
+                </div>
+                <div class="form-group full-width">
+                  <label>系统提示词（可选）</label>
+                  <textarea v-model="entry.systemPrompt" rows="4" placeholder="覆盖默认系统提示词"></textarea>
+                </div>
+                <div class="form-group">
+                  <label>工具策略</label>
+                  <AppSelect v-model="entry.toolMode" :options="modeToolModeOptions" />
+                </div>
+                <div class="form-group full-width" v-if="entry.toolMode !== 'all'">
+                  <label>{{ entry.toolMode === 'include' ? '工具白名单' : '工具黑名单' }}（每行一个）</label>
+                  <textarea v-model="entry.toolList" rows="3" placeholder="read_file&#10;memory_search&#10;..."></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn-mcp-add" type="button" @click="addModeEntry">+ 新增模式</button>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-section-head">
+            <div>
               <h3>工具状态</h3>
               <p>当前挂载到模型上下文中的可用能力。</p>
             </div>
@@ -291,16 +418,18 @@
           <div v-if="!cf.connected" class="settings-grid two-columns">
             <div class="form-group full-width cf-guide-steps">
               <p class="field-hint" style="line-height:1.8">
-                <strong style="color:var(--text-secondary)">快速开始：</strong><br/>
+                <strong style="color:var(--text-secondary)">快速开始：</strong><br />
                 1. 打开
-                <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener"
-                   style="color:var(--accent-cyan, var(--accent));text-decoration:underline">
+                <a
+                  href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener"
+                  style="color:var(--accent-cyan, var(--accent));text-decoration:underline"
+                >
                   Cloudflare API Tokens 页面
-                </a>，点击 "Create Token"<br/>
-                2. 选择 "Edit zone DNS" 模板，或自定义权限：<br/>
+                </a>，点击 "Create Token"<br />
+                2. 选择 "Edit zone DNS" 模板，或自定义权限：<br />
                 <span style="padding-left:1.2em;display:inline-block">
                   Zone &gt; Zone &gt; Read，Zone &gt; DNS &gt; Edit，Zone &gt; Zone Settings &gt; Edit
-                </span><br/>
+                </span><br />
                 3. 将生成的 Token 粘贴到下方
               </p>
             </div>
@@ -450,6 +579,18 @@ const dnsTypeOptions = [
   { value: 'TXT', label: 'TXT', description: '文本' },
 ]
 
+const subAgentToolModeOptions = [
+  { value: 'all', label: '全部工具', description: '不限制工具使用' },
+  { value: 'allowed', label: '白名单', description: '仅允许指定工具' },
+  { value: 'excluded', label: '黑名单', description: '排除指定工具' },
+]
+
+const modeToolModeOptions = [
+  { value: 'all', label: '全部工具', description: '不限制工具使用' },
+  { value: 'include', label: '白名单', description: '仅允许指定工具' },
+  { value: 'exclude', label: '黑名单', description: '排除指定工具' },
+]
+
 function buildModelCatalogSelectOptions(options: Array<{ id: string; label: string }>) {
   return [
     {
@@ -508,6 +649,14 @@ const {
   syncMcpTimeoutInput,
   handleMcpTimeoutInput,
   sanitizeMcpName,
+  subAgentEntries,
+  addSubAgentEntry,
+  removeSubAgentEntry,
+  handleSubAgentMaxToolRoundsInput,
+  syncSubAgentMaxToolRoundsInput,
+  modeEntries,
+  addModeEntry,
+  removeModeEntry,
   cf,
   streamHint,
   resetOverlayCloseIntent,

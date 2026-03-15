@@ -1,10 +1,7 @@
-import { computed, ref, type Ref } from 'vue'
-import type { DocumentInput, ImageInput } from '../api/types'
+import { computed, onBeforeUnmount, ref, type Ref } from 'vue'
+import type { ChatDocumentAttachment, ChatImageAttachment } from '../api/types'
+import { CHAT_ATTACHMENT_LIMITS, formatAttachmentBytes } from '../../../chat-attachments'
 
-const MAX_IMAGES = 5
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024
-const MAX_DOCUMENTS = 10
-const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024
 const SUPPORTED_DOC_EXTENSIONS = ['.pdf', '.docx', '.pptx', '.xlsx', '.xls']
 const SUPPORTED_TEXT_EXTENSIONS = [
   '.txt', '.md', '.markdown',
@@ -49,6 +46,17 @@ interface UseChatAttachmentsOptions {
   fileInputEl: Ref<HTMLInputElement | null>
 }
 
+interface DraftImageAttachment extends ChatImageAttachment {
+  file: File
+  previewUrl: string
+  size: number
+}
+
+interface DraftDocumentAttachment extends ChatDocumentAttachment {
+  file: File
+  size: number
+}
+
 function normalizeMimeType(mimeType: string): string {
   return mimeType.split(';', 1)[0].trim().toLowerCase()
 }
@@ -63,75 +71,52 @@ function isDocumentFile(file: File): boolean {
   return ext ? (SUPPORTED_DOC_EXTENSIONS.includes(ext) || SUPPORTED_TEXT_EXTENSIONS.includes(ext)) : false
 }
 
-function readFileAsImageInput(file: File): Promise<ImageInput> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') {
-        reject(new Error(`无法读取图片 ${file.name}`))
-        return
-      }
-      const [, data = ''] = reader.result.split(',', 2)
-      if (!data) {
-        reject(new Error(`图片 ${file.name} 转码失败`))
-        return
-      }
-      resolve({
-        mimeType: file.type || 'image/png',
-        data,
-      })
-    }
-    reader.onerror = () => reject(new Error(`图片 ${file.name} 读取失败`))
-    reader.readAsDataURL(file)
-  })
-}
-
-function readFileAsDocumentInput(file: File): Promise<DocumentInput> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') {
-        reject(new Error(`无法读取文档 ${file.name}`))
-        return
-      }
-      const [, data = ''] = reader.result.split(',', 2)
-      if (!data) {
-        reject(new Error(`文档 ${file.name} 转码失败`))
-        return
-      }
-      resolve({
-        fileName: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        data,
-      })
-    }
-    reader.onerror = () => reject(new Error(`文档 ${file.name} 读取失败`))
-    reader.readAsDataURL(file)
-  })
+function revokeObjectUrl(url?: string) {
+  if (!url?.startsWith('blob:')) return
+  URL.revokeObjectURL(url)
 }
 
 export function useChatAttachments(options: UseChatAttachmentsOptions) {
-  const images = ref<ImageInput[]>([])
-  const documents = ref<DocumentInput[]>([])
+  const images = ref<DraftImageAttachment[]>([])
+  const documents = ref<DraftDocumentAttachment[]>([])
   const errorMessage = ref('')
   const attachmentsProcessing = ref(false)
   const dragActive = ref(false)
 
   let dragDepth = 0
 
+  const totalAttachmentBytes = computed(() => {
+    const imageBytes = images.value.reduce((sum, image) => sum + image.size, 0)
+    const documentBytes = documents.value.reduce((sum, doc) => sum + doc.size, 0)
+    return imageBytes + documentBytes
+  })
+  const remainingAttachmentBytes = computed(() => {
+    return Math.max(0, CHAT_ATTACHMENT_LIMITS.maxTotalBytes - totalAttachmentBytes.value)
+  })
   const interactionDisabled = computed(() => options.disabled.value || attachmentsProcessing.value)
   const hasAttachments = computed(() => images.value.length > 0 || documents.value.length > 0)
-  const canAddMoreFiles = computed(() => images.value.length < MAX_IMAGES || documents.value.length < MAX_DOCUMENTS)
+  const canAddMoreFiles = computed(() => {
+    const hasSlot = images.value.length < CHAT_ATTACHMENT_LIMITS.maxImages
+      || documents.value.length < CHAT_ATTACHMENT_LIMITS.maxDocuments
+    return hasSlot && remainingAttachmentBytes.value > 0
+  })
   const attachButtonLabel = computed(() => (hasAttachments.value ? '继续添加' : '上传文件'))
   const uploadHintText = computed(() => {
     if (options.disabled.value) return '当前回答完成前，附件与输入将暂时锁定。'
-    if (attachmentsProcessing.value) return '正在处理附件，请稍候后再发送或继续上传。'
-    return `支持拖拽 / 粘贴上传 · 图片最多 ${MAX_IMAGES} 张(5MB) · 文档/文本代码文件最多 ${MAX_DOCUMENTS} 个(50MB)`
+    if (attachmentsProcessing.value) return '正在整理附件，请稍候后再发送或继续上传。'
+
+    return [
+      `支持拖拽 / 粘贴上传`,
+      `图片最多 ${CHAT_ATTACHMENT_LIMITS.maxImages} 张(${formatAttachmentBytes(CHAT_ATTACHMENT_LIMITS.maxImageBytes)}/张)`,
+      `文档/文本代码文件最多 ${CHAT_ATTACHMENT_LIMITS.maxDocuments} 个(${formatAttachmentBytes(CHAT_ATTACHMENT_LIMITS.maxDocumentBytes)}/个)`,
+      `总量 ${formatAttachmentBytes(CHAT_ATTACHMENT_LIMITS.maxTotalBytes)}`,
+    ].join(' · ')
   })
   const attachmentSummary = computed(() => {
     const parts: string[] = []
     if (images.value.length > 0) parts.push(`${images.value.length} 张图片`)
     if (documents.value.length > 0) parts.push(`${documents.value.length} 个文档`)
+    parts.push(`${formatAttachmentBytes(totalAttachmentBytes.value)} / ${formatAttachmentBytes(CHAT_ATTACHMENT_LIMITS.maxTotalBytes)}`)
     return parts.join(' · ')
   })
 
@@ -143,8 +128,8 @@ export function useChatAttachments(options: UseChatAttachmentsOptions) {
     errorMessage.value = ''
   }
 
-  function toImageSrc(image: ImageInput): string {
-    return `data:${image.mimeType};base64,${image.data}`
+  function toImageSrc(image: DraftImageAttachment): string {
+    return image.previewUrl
   }
 
   function openFilePicker() {
@@ -152,14 +137,22 @@ export function useChatAttachments(options: UseChatAttachmentsOptions) {
     options.fileInputEl.value?.click()
   }
 
+  function releaseComposerPreviews() {
+    for (const image of images.value) {
+      revokeObjectUrl(image.previewUrl)
+    }
+  }
+
   function clearAttachments() {
     if (interactionDisabled.value) return
+    releaseComposerPreviews()
     images.value = []
     documents.value = []
     clearError()
   }
 
   function resetAttachments() {
+    releaseComposerPreviews()
     images.value = []
     documents.value = []
     clearError()
@@ -167,7 +160,10 @@ export function useChatAttachments(options: UseChatAttachmentsOptions) {
 
   function removeImage(index: number) {
     if (interactionDisabled.value) return
-    images.value.splice(index, 1)
+    const [removed] = images.value.splice(index, 1)
+    if (removed) {
+      revokeObjectUrl(removed.previewUrl)
+    }
     clearError()
   }
 
@@ -184,70 +180,74 @@ export function useChatAttachments(options: UseChatAttachmentsOptions) {
 
     try {
       const errors: string[] = []
-      const imageFiles: File[] = []
-      const docFiles: File[] = []
+      const nextImages = [...images.value]
+      const nextDocuments = [...documents.value]
+      let nextTotalBytes = totalAttachmentBytes.value
 
       for (const file of files) {
         if (file.type.startsWith('image/')) {
-          imageFiles.push(file)
-        } else if (isDocumentFile(file)) {
-          docFiles.push(file)
-        } else {
-          errors.push(`${file.name}: 不支持的文件类型`)
-        }
-      }
-
-      const remainingImageSlots = MAX_IMAGES - images.value.length
-      if (imageFiles.length > 0 && remainingImageSlots <= 0) {
-        errors.push(`图片已达上限 ${MAX_IMAGES} 张`)
-      }
-      const candidateImages = imageFiles.slice(0, Math.max(0, remainingImageSlots))
-      if (imageFiles.length > remainingImageSlots && remainingImageSlots > 0) {
-        errors.push(`图片最多上传 ${MAX_IMAGES} 张`)
-      }
-      const validImages = candidateImages.filter((file) => {
-        if (file.size > MAX_IMAGE_BYTES) {
-          errors.push(`${file.name} 超过 5MB 限制`)
-          return false
-        }
-        return true
-      })
-
-      const remainingDocSlots = MAX_DOCUMENTS - documents.value.length
-      if (docFiles.length > 0 && remainingDocSlots <= 0) {
-        errors.push(`文档已达上限 ${MAX_DOCUMENTS} 个`)
-      }
-      const candidateDocs = docFiles.slice(0, Math.max(0, remainingDocSlots))
-      if (docFiles.length > remainingDocSlots && remainingDocSlots > 0) {
-        errors.push(`文档最多上传 ${MAX_DOCUMENTS} 个`)
-      }
-      const validDocs = candidateDocs.filter((file) => {
-        if (file.size > MAX_DOCUMENT_BYTES) {
-          errors.push(`${file.name} 超过 50MB 限制`)
-          return false
-        }
-        return true
-      })
-
-      if (validImages.length === 0 && validDocs.length === 0) {
-        setError(errors[0] ?? '没有可用的文件')
-      } else {
-        try {
-          const [newImages, newDocs] = await Promise.all([
-            Promise.all(validImages.map(readFileAsImageInput)),
-            Promise.all(validDocs.map(readFileAsDocumentInput)),
-          ])
-          images.value = [...images.value, ...newImages]
-          documents.value = [...documents.value, ...newDocs]
-          if (errors.length > 0) {
-            setError(errors.join('；'))
-          } else {
-            clearError()
+          if (nextImages.length >= CHAT_ATTACHMENT_LIMITS.maxImages) {
+            errors.push(`图片最多上传 ${CHAT_ATTACHMENT_LIMITS.maxImages} 张`)
+            continue
           }
-        } catch (err) {
-          const detail = err instanceof Error ? err.message : String(err)
-          setError(detail)
+          if (file.size > CHAT_ATTACHMENT_LIMITS.maxImageBytes) {
+            errors.push(`${file.name} 超过 ${formatAttachmentBytes(CHAT_ATTACHMENT_LIMITS.maxImageBytes)} 限制`)
+            continue
+          }
+          if (nextTotalBytes + file.size > CHAT_ATTACHMENT_LIMITS.maxTotalBytes) {
+            errors.push(`附件总量不能超过 ${formatAttachmentBytes(CHAT_ATTACHMENT_LIMITS.maxTotalBytes)}`)
+            continue
+          }
+
+          nextImages.push({
+            mimeType: file.type || 'image/png',
+            file,
+            previewUrl: URL.createObjectURL(file),
+            size: file.size,
+            fileName: file.name,
+          })
+          nextTotalBytes += file.size
+          continue
         }
+
+        if (isDocumentFile(file)) {
+          if (nextDocuments.length >= CHAT_ATTACHMENT_LIMITS.maxDocuments) {
+            errors.push(`文档最多上传 ${CHAT_ATTACHMENT_LIMITS.maxDocuments} 个`)
+            continue
+          }
+          if (file.size > CHAT_ATTACHMENT_LIMITS.maxDocumentBytes) {
+            errors.push(`${file.name} 超过 ${formatAttachmentBytes(CHAT_ATTACHMENT_LIMITS.maxDocumentBytes)} 限制`)
+            continue
+          }
+          if (nextTotalBytes + file.size > CHAT_ATTACHMENT_LIMITS.maxTotalBytes) {
+            errors.push(`附件总量不能超过 ${formatAttachmentBytes(CHAT_ATTACHMENT_LIMITS.maxTotalBytes)}`)
+            continue
+          }
+
+          nextDocuments.push({
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            file,
+            size: file.size,
+          })
+          nextTotalBytes += file.size
+          continue
+        }
+
+        errors.push(`${file.name}: 不支持的文件类型`)
+      }
+
+      if (nextImages.length === images.value.length && nextDocuments.length === documents.value.length) {
+        setError(errors[0] ?? '没有可用的文件')
+        return
+      }
+
+      images.value = nextImages
+      documents.value = nextDocuments
+      if (errors.length > 0) {
+        setError(errors.join('；'))
+      } else {
+        clearError()
       }
     } finally {
       attachmentsProcessing.value = false
@@ -301,20 +301,28 @@ export function useChatAttachments(options: UseChatAttachmentsOptions) {
     await appendFiles(imageFiles)
   }
 
-  function buildOutgoingImages(): ImageInput[] {
+  function buildOutgoingImages(): ChatImageAttachment[] {
     return images.value.map((image) => ({
       mimeType: image.mimeType,
-      data: image.data,
+      file: image.file,
+      size: image.size,
+      fileName: image.fileName,
+      previewUrl: URL.createObjectURL(image.file),
     }))
   }
 
-  function buildOutgoingDocuments(): DocumentInput[] {
+  function buildOutgoingDocuments(): ChatDocumentAttachment[] {
     return documents.value.map((doc) => ({
       fileName: doc.fileName,
       mimeType: doc.mimeType,
-      data: doc.data,
+      file: doc.file,
+      size: doc.size,
     }))
   }
+
+  onBeforeUnmount(() => {
+    releaseComposerPreviews()
+  })
 
   return {
     images,

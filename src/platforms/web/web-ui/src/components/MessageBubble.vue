@@ -53,9 +53,13 @@
 
     <div ref="messageEl" class="message" :class="[`message-${role}`, { streaming }]">
       <!-- eslint-disable-next-line vue/no-v-html -->
-      <div v-if="role === 'user'" class="message-plain" v-html="renderedText"></div>
+      <div v-if="renderAsPlainText" class="message-plain" v-html="renderedText"></div>
       <!-- eslint-disable-next-line vue/no-v-html -->
       <div v-else class="message-rich" v-html="renderedText" @click="handleRichContentClick"></div>
+    </div>
+
+    <div v-if="metaSegments.length > 0" class="message-perf-meta">
+      <span v-for="(seg, i) in metaSegments" :key="i" class="message-perf-item">{{ seg }}</span>
     </div>
   </div>
 </template>
@@ -65,6 +69,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { ICONS } from '../constants/icons'
 import { copyTextToClipboard } from '../utils/clipboard'
+import type { MessageMeta } from '../api/types'
 
 type RenderRichText = (text: string) => string
 
@@ -101,6 +106,7 @@ async function ensureMarkdownRendererLoaded(): Promise<RenderRichText> {
 const props = defineProps<{
   role: 'user' | 'model'
   text: string
+  meta?: MessageMeta
   streaming?: boolean
   deleteState?: 'idle' | 'armed' | 'deleting'
   retryMessageIndex?: number | null
@@ -119,6 +125,20 @@ const emit = defineEmits<{
 const canDeleteMessage = computed(() => !props.streaming && typeof props.messageIndex === 'number' && props.messageIndex >= 0)
 const roleLabel = computed(() => (props.role === 'user' ? '你' : 'Iris'))
 const roleIcon = computed(() => (props.role === 'user' ? ICONS.common.send : ICONS.common.sparkle))
+
+const metaSegments = computed<string[]>(() => {
+  const m = props.meta
+  if (!m || props.streaming) return []
+  const segs: string[] = []
+  if (m.modelName) segs.push(m.modelName)
+  if (m.tokenIn != null) segs.push(`IN ${m.tokenIn.toLocaleString()}`)
+  if (m.tokenOut != null) segs.push(`OUT ${m.tokenOut.toLocaleString()}`)
+  if (m.durationMs != null) segs.push(m.durationMs < 1000 ? `${m.durationMs}ms` : `${(m.durationMs / 1000).toFixed(1)}s`)
+  if (m.tokenOut != null && m.streamOutputDurationMs != null && m.streamOutputDurationMs > 0) {
+    segs.push(`${(m.tokenOut / (m.streamOutputDurationMs / 1000)).toFixed(1)} t/s`)
+  }
+  return segs
+})
 const resolvedRetryButtonTitle = computed(() => {
   if (props.retryButtonTitle?.trim()) return props.retryButtonTitle
   return '重试这一轮对话'
@@ -144,6 +164,8 @@ const deleteButtonTitle = computed(() => {
   return props.deleteState === 'armed' ? '再次点击确认删除' : '删除消息'
 })
 const messageEl = ref<HTMLDivElement | null>(null)
+const renderAsPlainText = computed(() => props.role === 'user' || !!props.streaming)
+
 const messageCopyText = ref('复制')
 const messageCopyState = ref<'idle' | 'success' | 'error'>('idle')
 const codeCopyTimers = new Set<number>()
@@ -273,7 +295,7 @@ let disposed = false
 async function updateRenderedText() {
   const taskVersion = ++renderTaskVersion
 
-  if (props.role === 'user') {
+  if (renderAsPlainText.value) {
     renderedText.value = renderPlainTextSync(props.text)
     return
   }
@@ -296,7 +318,7 @@ async function updateRenderedText() {
   }
 }
 
-watch(() => [props.role, props.text], () => {
+watch(() => [props.role, props.text, props.streaming], () => {
   void updateRenderedText()
 }, { immediate: true })
 

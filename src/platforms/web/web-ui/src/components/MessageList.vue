@@ -60,6 +60,7 @@
               v-if="part.type === 'text' && part.text?.trim() && !isInternalMarker(part.text!)"
               :role="item.message.role"
               :text="part.text!"
+              :meta="item.message.role === 'model' && isLastVisibleTextPart(item.message, j) ? item.message.meta : undefined"
               :message-index="item.messageIndex"
               :retry-message-index="getRetryMessageIndex(item.messageIndex)"
               :actions-locked="actionsLocked"
@@ -72,19 +73,35 @@
             />
 
             <ImageBubble
-              v-else-if="part.type === 'image' && part.mimeType && part.data"
+              v-else-if="part.type === 'image' && part.mimeType && (part.data || part.previewUrl)"
               :role="item.message.role"
               :mime-type="part.mimeType"
               :data="part.data"
+              :preview-url="part.previewUrl"
+              :revoke-preview-on-unmount="item.message.role === 'user' && !!part.file && !!part.previewUrl"
             />
 
             <DocumentBubble
-              v-else-if="part.type === 'document' && part.mimeType && part.data"
+              v-else-if="part.type === 'document' && part.mimeType && (part.data || part.fileName)"
               :role="item.message.role"
               :mime-type="part.mimeType"
               :data="part.data"
               :file-name="part.fileName"
             />
+
+            <div
+              v-else-if="part.type === 'thought' && part.text?.trim()"
+              class="message-stack message-stack-bubble message-stack-model"
+            >
+              <div class="message message-model message-thought-block" :class="{ expanded: isThoughtExpanded(`${item.key}-thought-${j}`) }" @click="toggleThought(`${item.key}-thought-${j}`)">
+                <div class="thought-header">
+                  <span class="thought-label">思考过程</span>
+                  <span v-if="part.durationMs != null" class="thought-duration">{{ formatThoughtDuration(part.durationMs) }}</span>
+                  <span class="thought-toggle">{{ isThoughtExpanded(`${item.key}-thought-${j}`) ? '收起' : '展开' }}</span>
+                </div>
+                <div class="thought-content" :class="{ expanded: isThoughtExpanded(`${item.key}-thought-${j}`) }">{{ part.text }}</div>
+              </div>
+            </div>
           </template>
         </template>
 
@@ -278,6 +295,7 @@ const containerEl = ref<HTMLElement>()
 const shouldStickToBottom = ref(true)
 const expandedToolGroups = reactive(new Set<string>())
 const collapsingToolGroups = reactive(new Set<string>())
+const expandedThoughts = reactive(new Set<string>())
 const toolWorkflowCompactSizeCache = new Map<string, { width: number, height: number }>()
 const toolWorkflowCardEls = new Map<string, HTMLButtonElement>()
 const toolWorkflowStackEls = new Map<string, HTMLDivElement>()
@@ -299,6 +317,23 @@ function isInternalMarker(text: string): boolean {
 
   return /^\[Document: [^\]\r\n]+\]$/.test(normalized)
     || /^\[Image: original [^\]\r\n]+\]$/.test(normalized)
+}
+
+function isThoughtExpanded(key: string): boolean {
+  return expandedThoughts.has(key)
+}
+
+function toggleThought(key: string) {
+  if (expandedThoughts.has(key)) {
+    expandedThoughts.delete(key)
+  } else {
+    expandedThoughts.add(key)
+  }
+}
+
+function formatThoughtDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
 }
 
 function hasToolParts(msg: Message): boolean {
@@ -323,6 +358,13 @@ function countToolResponses(msg: Message): number {
 
 function isVisibleTextPart(part: MessagePart): boolean {
   return part.type === 'text' && !!part.text?.trim() && !isInternalMarker(part.text)
+}
+
+function isLastVisibleTextPart(msg: Message, partIndex: number): boolean {
+  for (let i = msg.parts.length - 1; i >= 0; i--) {
+    if (isVisibleTextPart(msg.parts[i])) return i === partIndex
+  }
+  return false
 }
 
 function getRetryMessageIndex(messageIndex: number): number | null {

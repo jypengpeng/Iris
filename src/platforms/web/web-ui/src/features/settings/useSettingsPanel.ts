@@ -382,6 +382,215 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     open: boolean // UI 展开状态
   }
 
+  // ============ Sub-Agents ============
+  type SubAgentToolMode = 'all' | 'allowed' | 'excluded'
+
+  interface SubAgentEntry {
+    uid: number
+    open: boolean
+    name: string
+    description: string
+    systemPrompt: string
+    toolMode: SubAgentToolMode
+    toolList: string
+    modelName: string
+    maxToolRounds: number
+    maxToolRoundsInput: string
+    parallel: boolean
+  }
+
+  let nextSubAgentUid = 1
+
+  function createSubAgentEntry(data: Partial<SubAgentEntry> = {}): SubAgentEntry {
+    return {
+      uid: nextSubAgentUid++,
+      open: data.open ?? true,
+      name: data.name ?? '',
+      description: data.description ?? '',
+      systemPrompt: data.systemPrompt ?? '',
+      toolMode: data.toolMode ?? 'all',
+      toolList: data.toolList ?? '',
+      modelName: data.modelName ?? '',
+      maxToolRounds: data.maxToolRounds ?? 200,
+      maxToolRoundsInput: String(data.maxToolRounds ?? 200),
+      parallel: data.parallel ?? false,
+    }
+  }
+
+  const subAgentEntries = reactive<SubAgentEntry[]>([])
+  const subAgentOriginalNames = ref<string[]>([])
+
+  function addSubAgentEntry() {
+    subAgentEntries.push(createSubAgentEntry())
+  }
+
+  function removeSubAgentEntry(index: number) {
+    subAgentEntries.splice(index, 1)
+  }
+
+  function handleSubAgentMaxToolRoundsInput(entry: SubAgentEntry, event: Event) {
+    const value = (event.target as HTMLInputElement).value
+    entry.maxToolRoundsInput = value
+    if (!value.trim()) return
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) {
+      entry.maxToolRounds = clampInteger(parsed, 1, 999)
+    }
+  }
+
+  function syncSubAgentMaxToolRoundsInput(entry: SubAgentEntry) {
+    entry.maxToolRoundsInput = String(entry.maxToolRounds)
+  }
+
+  function findDuplicateSubAgentNames(): string[] {
+    const seen = new Set<string>()
+    const duplicates = new Set<string>()
+    for (const entry of subAgentEntries) {
+      const normalized = entry.name.trim()
+      if (!normalized) continue
+      if (seen.has(normalized)) { duplicates.add(normalized); continue }
+      seen.add(normalized)
+    }
+    return Array.from(duplicates)
+  }
+
+  function buildSubAgentPayload(): Record<string, any> | null {
+    const types: Record<string, any> = {}
+    for (const name of subAgentOriginalNames.value) {
+      if (!subAgentEntries.some(e => e.name.trim() === name)) {
+        types[name] = null
+      }
+    }
+    for (const entry of subAgentEntries) {
+      const name = entry.name.trim()
+      if (!name) continue
+      const def: any = {
+        description: entry.description,
+        systemPrompt: entry.systemPrompt,
+        maxToolRounds: entry.maxToolRounds,
+        parallel: entry.parallel,
+      }
+      if (entry.modelName.trim()) {
+        def.modelName = entry.modelName.trim()
+      } else {
+        def.modelName = null
+      }
+      if (entry.toolMode === 'allowed') {
+        def.allowedTools = entry.toolList.split('\n').map(s => s.trim()).filter(Boolean)
+        def.excludedTools = null
+      } else if (entry.toolMode === 'excluded') {
+        def.excludedTools = entry.toolList.split('\n').map(s => s.trim()).filter(Boolean)
+        def.allowedTools = null
+      } else {
+        def.allowedTools = null
+        def.excludedTools = null
+      }
+      types[name] = def
+    }
+    return Object.keys(types).length > 0 ? { types } : null
+  }
+
+  function validateSubAgentEntries(): string | null {
+    if (subAgentEntries.length === 0) return null
+    const names = new Set<string>()
+    for (const entry of subAgentEntries) {
+      const name = entry.name.trim()
+      if (!name) return '子代理类型名称不能为空'
+      if (!entry.description.trim()) return `子代理类型「${name}」缺少描述`
+      if (names.has(name)) return `子代理类型名称重复：${name}`
+      names.add(name)
+    }
+    return null
+  }
+
+  // ============ Modes ============
+  type ModeToolMode = 'all' | 'include' | 'exclude'
+
+  interface ModeEntry {
+    uid: number
+    open: boolean
+    name: string
+    description: string
+    systemPrompt: string
+    toolMode: ModeToolMode
+    toolList: string
+  }
+
+  let nextModeUid = 1
+
+  function createModeEntry(data: Partial<ModeEntry> = {}): ModeEntry {
+    return {
+      uid: nextModeUid++,
+      open: data.open ?? true,
+      name: data.name ?? '',
+      description: data.description ?? '',
+      systemPrompt: data.systemPrompt ?? '',
+      toolMode: data.toolMode ?? 'all',
+      toolList: data.toolList ?? '',
+    }
+  }
+
+  const modeEntries = reactive<ModeEntry[]>([])
+  const modeOriginalNames = ref<string[]>([])
+
+  function addModeEntry() {
+    modeEntries.push(createModeEntry())
+  }
+
+  function removeModeEntry(index: number) {
+    modeEntries.splice(index, 1)
+  }
+
+  function findDuplicateModeNames(): string[] {
+    const seen = new Set<string>()
+    const duplicates = new Set<string>()
+    for (const entry of modeEntries) {
+      const normalized = entry.name.trim()
+      if (!normalized) continue
+      if (seen.has(normalized)) { duplicates.add(normalized); continue }
+      seen.add(normalized)
+    }
+    return Array.from(duplicates)
+  }
+
+  function buildModesPayload(): Record<string, any> | null {
+    const modes: Record<string, any> = {}
+    for (const name of modeOriginalNames.value) {
+      if (!modeEntries.some(e => e.name.trim() === name)) {
+        modes[name] = null
+      }
+    }
+    for (const entry of modeEntries) {
+      const name = entry.name.trim()
+      if (!name) continue
+      const def: any = {}
+      if (entry.description.trim()) def.description = entry.description.trim()
+      if (entry.systemPrompt.trim()) def.systemPrompt = entry.systemPrompt.trim()
+      if (entry.toolMode === 'include') {
+        def.tools = { include: entry.toolList.split('\n').map(s => s.trim()).filter(Boolean), exclude: null }
+      } else if (entry.toolMode === 'exclude') {
+        def.tools = { exclude: entry.toolList.split('\n').map(s => s.trim()).filter(Boolean), include: null }
+      } else {
+        def.tools = null
+      }
+      modes[name] = def
+    }
+    return Object.keys(modes).length > 0 ? modes : null
+  }
+
+  function validateModeEntries(): string | null {
+    if (modeEntries.length === 0) return null
+    const names = new Set<string>()
+    for (const entry of modeEntries) {
+      const name = entry.name.trim()
+      if (!name) return '模式名称不能为空'
+      if (name === 'normal') return '模式名称不能使用保留名称「normal」'
+      if (names.has(name)) return `模式名称重复：${name}`
+      names.add(name)
+    }
+    return null
+  }
+
   const mcpServers = reactive<MCPServerEntry[]>([])
   /** 加载时记录的原始服务器名，用于保存时识别被删除的服务器 */
   const mcpOriginalNames = ref<string[]>([])
@@ -619,6 +828,8 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       () => JSON.stringify(modelEntries.map(entry => ({ modelName: entry.modelName, provider: entry.provider, apiKey: entry.apiKey, modelId: entry.modelId, baseUrl: entry.baseUrl }))),
       // 排除 open（纯 UI 状态）
       () => JSON.stringify(mcpServers, (key, value) => (key === 'open' || key === 'timeoutInput') ? undefined : value),
+      () => JSON.stringify(subAgentEntries.map(e => ({ name: e.name, description: e.description, systemPrompt: e.systemPrompt, toolMode: e.toolMode, toolList: e.toolList, modelName: e.modelName, maxToolRounds: e.maxToolRounds, parallel: e.parallel }))),
+      () => JSON.stringify(modeEntries.map(e => ({ name: e.name, description: e.description, systemPrompt: e.systemPrompt, toolMode: e.toolMode, toolList: e.toolList }))),
     ],
     scheduleAutoSave,
   )
@@ -682,6 +893,60 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
         }
       }
 
+      // Sub-Agents
+      if (data.sub_agents?.types && typeof data.sub_agents.types === 'object') {
+        for (const [name, cfg] of Object.entries(data.sub_agents.types) as [string, any][]) {
+          if (!cfg || typeof cfg !== 'object') continue
+          let toolMode: SubAgentToolMode = 'all'
+          let toolList = ''
+          if (Array.isArray(cfg.allowedTools) && cfg.allowedTools.length > 0) {
+            toolMode = 'allowed'
+            toolList = cfg.allowedTools.join('\n')
+          } else if (Array.isArray(cfg.excludedTools) && cfg.excludedTools.length > 0) {
+            toolMode = 'excluded'
+            toolList = cfg.excludedTools.join('\n')
+          }
+          subAgentEntries.push(createSubAgentEntry({
+            name,
+            description: cfg.description || '',
+            systemPrompt: cfg.systemPrompt || '',
+            toolMode,
+            toolList,
+            modelName: cfg.modelName || '',
+            maxToolRounds: cfg.maxToolRounds ?? 200,
+            parallel: cfg.parallel ?? false,
+            open: false,
+          }))
+        }
+        subAgentOriginalNames.value = subAgentEntries.map(e => e.name)
+      }
+
+      // Modes
+      if (data.modes && typeof data.modes === 'object' && !Array.isArray(data.modes)) {
+        for (const [name, cfg] of Object.entries(data.modes) as [string, any][]) {
+          if (name === 'normal') continue
+          if (!cfg || typeof cfg !== 'object') continue
+          let toolMode: ModeToolMode = 'all'
+          let toolList = ''
+          if (Array.isArray(cfg.tools?.include) && cfg.tools.include.length > 0) {
+            toolMode = 'include'
+            toolList = cfg.tools.include.join('\n')
+          } else if (Array.isArray(cfg.tools?.exclude) && cfg.tools.exclude.length > 0) {
+            toolMode = 'exclude'
+            toolList = cfg.tools.exclude.join('\n')
+          }
+          modeEntries.push(createModeEntry({
+            name,
+            description: cfg.description || '',
+            systemPrompt: cfg.systemPrompt || '',
+            toolMode,
+            toolList,
+            open: false,
+          }))
+        }
+        modeOriginalNames.value = modeEntries.map(e => e.name)
+      }
+
       // 等待 provider watcher 的异步回调执行完毕后再启用副作用
       await nextTick()
       configLoaded = true
@@ -689,7 +954,6 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       syncMaxToolRoundsInput()
     } catch (err: any) {
       const detail = rememberAccessRequirementsFromError(err)
-      configLoaded = true
       statusText.value = accessLocked.value
         ? formatAccessLockedMessage('加载配置失败')
         : '加载配置失败: ' + (detail || '未知错误')
@@ -791,9 +1055,41 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       return
     }
 
+    const duplicateSubAgentNames = findDuplicateSubAgentNames()
+    if (duplicateSubAgentNames.length > 0) {
+      statusText.value = `保存失败: 子代理类型名称重复（${duplicateSubAgentNames.join('、')}）`
+      statusError.value = true
+      saving.value = false
+      return
+    }
+
+    const duplicateModeNamesArr = findDuplicateModeNames()
+    if (duplicateModeNamesArr.length > 0) {
+      statusText.value = `保存失败: 模式名称重复（${duplicateModeNamesArr.join('、')}）`
+      statusError.value = true
+      saving.value = false
+      return
+    }
+
     const modelValidationError = validateModelEntries()
     if (modelValidationError) {
       statusText.value = '保存失败: ' + modelValidationError
+      statusError.value = true
+      saving.value = false
+      return
+    }
+
+    const subAgentValidationError = validateSubAgentEntries()
+    if (subAgentValidationError) {
+      statusText.value = '保存失败: ' + subAgentValidationError
+      statusError.value = true
+      saving.value = false
+      return
+    }
+
+    const modeValidationError = validateModeEntries()
+    if (modeValidationError) {
+      statusText.value = '保存失败: ' + modeValidationError
       statusError.value = true
       saving.value = false
       return
@@ -803,6 +1099,8 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       const { payload: llmPayload, currentNames: currentModelNames } = buildLLMPayload()
 
       const { payload: mcpPayload, currentNames } = buildMCPPayload()
+      const subAgentPayload = buildSubAgentPayload()
+      const modesPayload = buildModesPayload()
       const payload: Record<string, any> = {
         llm: llmPayload,
         system: {
@@ -814,6 +1112,12 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       if (mcpPayload !== null) {
         payload.mcp = mcpPayload
       }
+      if (subAgentPayload !== null) {
+        payload.sub_agents = subAgentPayload
+      }
+      if (modesPayload !== null) {
+        payload.modes = modesPayload
+      }
       const result = await updateConfig(payload)
 
       if (result.ok) {
@@ -821,6 +1125,8 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
         statusError.value = false
         modelOriginalNames.value = currentModelNames
         mcpOriginalNames.value = currentNames
+        subAgentOriginalNames.value = subAgentEntries.map(e => e.name.trim()).filter(Boolean)
+        modeOriginalNames.value = modeEntries.map(e => e.name.trim()).filter(Boolean)
         dirty.value = false
         for (const entry of modelEntries) {
           entry.originalModelName = entry.modelName.trim()
@@ -1166,6 +1472,14 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     syncMcpTimeoutInput,
     handleMcpTimeoutInput,
     sanitizeMcpName,
+    subAgentEntries,
+    addSubAgentEntry,
+    removeSubAgentEntry,
+    handleSubAgentMaxToolRoundsInput,
+    syncSubAgentMaxToolRoundsInput,
+    modeEntries,
+    addModeEntry,
+    removeModeEntry,
     cf,
     streamHint,
     resetOverlayCloseIntent,

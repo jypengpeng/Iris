@@ -33,6 +33,10 @@ import typescriptLanguage from 'highlight.js/lib/languages/typescript'
 import xmlLanguage from 'highlight.js/lib/languages/xml'
 import yamlLanguage from 'highlight.js/lib/languages/yaml'
 
+import { findFenceRenderer } from './renderers/registry'
+import './renderers/svg-renderer'
+import './renderers/html-renderer'
+
 hljs.registerLanguage('bash', bashLanguage)
 hljs.registerLanguage('c', cLanguage)
 hljs.registerLanguage('cpp', cppLanguage)
@@ -146,6 +150,7 @@ const LANGUAGE_LABELS: Record<string, string> = {
   ruby: 'Ruby',
   rust: 'Rust',
   sql: 'SQL',
+  svg: 'SVG',
   text: '文本',
   typescript: 'TypeScript',
   xml: 'XML',
@@ -171,6 +176,7 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   shell: 'bash',
   sh: 'bash',
   text: 'text',
+  svg: 'svg',
   ts: 'typescript',
   tsx: 'typescript',
   yml: 'yaml',
@@ -183,6 +189,7 @@ const HIGHLIGHT_LANGUAGE_MAP: Record<string, string> = {
   javascript: 'javascript',
   markdown: 'markdown',
   text: 'plaintext',
+  svg: 'xml',
   typescript: 'typescript',
   yaml: 'yaml',
 }
@@ -1290,6 +1297,22 @@ md.renderer.rules.fence = (tokens, idx, _options, env) => {
       placeholder: createDeferredHtmlPlaceholder(index),
       html: buildLatexPreviewBlock(token.content, hintedLang),
     })
+    targetEnv.deferredHtmlSegments = segments
+    return createDeferredHtmlPlaceholder(index)
+  }
+
+  const fenceRenderer = findFenceRenderer(hintedLang, token.content)
+  if (fenceRenderer) {
+    const targetEnv = env as MarkdownRenderEnv
+    const segments = targetEnv.deferredHtmlSegments ?? []
+    const index = segments.length
+    const result = fenceRenderer.buildPreviewBlock({
+      source: token.content,
+      lang: hintedLang,
+      renderCodeBlock,
+      escapeHtml,
+    })
+    segments.push({ placeholder: createDeferredHtmlPlaceholder(index), html: result.html })
     targetEnv.deferredHtmlSegments = segments
     return createDeferredHtmlPlaceholder(index)
   }

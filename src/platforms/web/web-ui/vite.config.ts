@@ -17,7 +17,7 @@ export default defineConfig({
         manualChunks(id) {
           const normalizedId = id.replace(/\\/g, '/')
 
-          if (normalizedId.includes('/src/utils/markdown.ts')) {
+          if (normalizedId.includes('/src/utils/markdown.ts') || normalizedId.includes('/src/utils/renderers/')) {
             return 'markdown-renderer'
           }
 

@@ -2605,7 +2605,9 @@ select:focus-visible {
 }
 
 .message-latex-shell,
-.message-markdown-shell {
+.message-markdown-shell,
+.message-svg-shell,
+.message-html-shell {
   margin: 1em 0;
   border-radius: 20px;
   border: 1px solid rgba(var(--tint-rgb), 0.08);
@@ -2615,7 +2617,9 @@ select:focus-visible {
 }
 
 .message-latex-header,
-.message-markdown-header {
+.message-markdown-header,
+.message-svg-header,
+.message-html-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2632,8 +2636,18 @@ select:focus-visible {
   background: rgba(116, 215, 255, 0.08);
 }
 
+.message-svg-header {
+  background: rgba(82, 196, 120, 0.08);
+}
+
+.message-html-header {
+  background: rgba(255, 168, 64, 0.08);
+}
+
 .message-latex-badge,
-.message-markdown-badge {
+.message-markdown-badge,
+.message-svg-badge,
+.message-html-badge {
   display: inline-flex;
   align-items: center;
   padding: 0.36em 0.72em;
@@ -2661,19 +2675,37 @@ select:focus-visible {
   border: 1px solid rgba(116, 215, 255, 0.22);
 }
 
+.message-svg-badge {
+  border-radius: 999px;
+  background: rgba(82, 196, 120, 0.14);
+  border: 1px solid rgba(82, 196, 120, 0.22);
+}
+
+.message-html-badge {
+  border-radius: 999px;
+  background: rgba(255, 168, 64, 0.14);
+  border: 1px solid rgba(255, 168, 64, 0.22);
+}
+
 .message-latex-meta,
-.message-markdown-meta {
+.message-markdown-meta,
+.message-svg-meta,
+.message-html-meta {
   color: var(--text-muted);
   font-size: 0.8rem;
 }
 
 .message-latex-preview,
-.message-markdown-preview {
+.message-markdown-preview,
+.message-svg-preview,
+.message-html-preview {
   padding: 14px 14px 4px;
 }
 
 .message-latex-preview > *:last-child,
-.message-markdown-preview > *:last-child {
+.message-markdown-preview > *:last-child,
+.message-svg-preview > *:last-child,
+.message-html-preview > *:last-child {
   margin-bottom: 0;
 }
 
@@ -2682,13 +2714,28 @@ select:focus-visible {
   margin-right: 0;
 }
 
+.message-svg-preview svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.message-html-preview {
+  padding: 14px;
+}
+
 .message-latex-source,
-.message-markdown-source {
+.message-markdown-source,
+.message-svg-source,
+.message-html-source {
   border-top: 1px solid rgba(var(--tint-rgb), 0.08);
 }
 
 .message-latex-source > summary,
-.message-markdown-source > summary {
+.message-markdown-source > summary,
+.message-svg-source > summary,
+.message-html-source > summary {
   cursor: pointer;
   list-style: none;
   padding: 12px 14px;
@@ -2697,22 +2744,30 @@ select:focus-visible {
 }
 
 .message-latex-source > summary::-webkit-details-marker,
-.message-markdown-source > summary::-webkit-details-marker {
+.message-markdown-source > summary::-webkit-details-marker,
+.message-svg-source > summary::-webkit-details-marker,
+.message-html-source > summary::-webkit-details-marker {
   display: none;
 }
 
 .message-latex-source[open] > summary,
-.message-markdown-source[open] > summary {
+.message-markdown-source[open] > summary,
+.message-svg-source[open] > summary,
+.message-html-source[open] > summary {
   color: var(--text-primary);
 }
 
 .message-latex-source .message-code-shell,
-.message-markdown-source .message-code-shell {
+.message-markdown-source .message-code-shell,
+.message-svg-source .message-code-shell,
+.message-html-source .message-code-shell {
   margin: 0 14px 14px;
 }
 
 .message-latex-empty,
-.message-markdown-empty {
+.message-markdown-empty,
+.message-svg-empty,
+.message-html-empty {
   color: var(--text-muted);
 }
 
@@ -2865,7 +2920,9 @@ select:focus-visible {
 :root[data-theme="light"] .message-table-shell,
 :root[data-theme="light"] .message-katex-block,
 :root[data-theme="light"] .message-latex-shell,
-:root[data-theme="light"] .message-markdown-shell {
+:root[data-theme="light"] .message-markdown-shell,
+:root[data-theme="light"] .message-svg-shell,
+:root[data-theme="light"] .message-html-shell {
   background: rgba(255, 255, 255, 0.62);
   border-color: rgba(15, 23, 42, 0.08);
 }
@@ -2902,6 +2959,34 @@ select:focus-visible {
 }
 
 :root[data-theme="light"] .message-latex-source {
+  border-top-color: rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] .message-svg-header {
+  background: rgba(82, 196, 120, 0.08);
+  border-bottom-color: rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] .message-svg-badge {
+  background: rgba(82, 196, 120, 0.12);
+  border-color: rgba(82, 196, 120, 0.18);
+}
+
+:root[data-theme="light"] .message-svg-source {
+  border-top-color: rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] .message-html-header {
+  background: rgba(255, 168, 64, 0.08);
+  border-bottom-color: rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] .message-html-badge {
+  background: rgba(255, 168, 64, 0.12);
+  border-color: rgba(255, 168, 64, 0.18);
+}
+
+:root[data-theme="light"] .message-html-source {
   border-top-color: rgba(15, 23, 42, 0.08);
 }
 

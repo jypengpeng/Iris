@@ -105,6 +105,12 @@ export class ConsolePlatform extends PlatformAdapter {
   /** 当前响应周期内的工具调用 ID 集合 */
   private currentToolIds = new Set<string>();
 
+  /** redo 用的 Content 栈（与前端 undoRedoRef 对应） */
+  private redoContentStack: Content[] = [];
+
+  /** 串行化 undo/redo 持久化操作，防止并发写入 */
+  private historyMutationQueue: Promise<void> = Promise.resolve();
+
   constructor(backend: Backend, options: ConsolePlatformOptions) {
     super();
     this.backend = backend;
@@ -121,14 +127,24 @@ export class ConsolePlatform extends PlatformAdapter {
     });
   }
 
+  /**
+   * 将一个异步操作排入持久化队列，保证串行执行。
+   * 前一个操作失败不会阻塞后续操作。
+   */
+  private enqueueHistoryMutation(task: () => Promise<void>): Promise<void> {
+    const next = this.historyMutationQueue.then(task, task);
+    this.historyMutationQueue = next;
+    return next;
+  }
+
   override async start(): Promise<void> {
     setGlobalLogLevel(LogLevel.SILENT);
 
     // 监听 Backend 事件
     this.backend.on('assistant:content', (sid: string, content: Content) => {
       if (sid === this.sessionId) {
-        const parts = convertPartsToMessageParts(content.parts, 'queued');
         const meta = getMessageMeta(content);
+        const parts = convertPartsToMessageParts(content.parts, 'queued');
         this.appHandle?.finalizeAssistantParts(parts, meta);
       }
     });
@@ -202,11 +218,36 @@ export class ConsolePlatform extends PlatformAdapter {
           resolve();
         },
         onSubmit: (text: string) => this.handleInput(text),
+        onUndo: (newLength: number) => {
+          // 串行化：排入持久化队列，保证多次 undo 不会并发写入
+          this.enqueueHistoryMutation(async () => {
+            const history = await this.backend.getHistory(this.sessionId);
+            if (history.length > newLength) {
+              this.redoContentStack.push(history[history.length - 1]);
+              if (this.redoContentStack.length > 200) {
+                this.redoContentStack.splice(0, this.redoContentStack.length - 200);
+              }
+            }
+            await this.backend.truncateHistory(this.sessionId, newLength);
+          });
+        },
+        onRedo: (_restoredRole: string) => {
+          // 串行化：排入持久化队列
+          this.enqueueHistoryMutation(async () => {
+            const content = this.redoContentStack.pop();
+            if (content) {
+              await this.backend.getStorage().addMessage(this.sessionId, content);
+            }
+          });
+        },
+        onClearRedoStack: () => {
+          this.redoContentStack.length = 0;
+        },
         onToolApproval: (toolId: string, approved: boolean) => {
           this.backend.approveTool(toolId, approved);
         },
         onAbort: () => {
-          this.backend.abortChat();
+          this.backend.abortChat(this.sessionId);
         },
         onNewSession: () => this.handleNewSession(),
         onLoadSession: (id: string) => this.handleLoadSession(id),

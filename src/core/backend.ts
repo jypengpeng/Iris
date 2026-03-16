@@ -317,8 +317,8 @@ export class Backend extends EventEmitter {
   /** 当前正在处理的 sessionId（用于工具事件转发） */
   private activeSessionId?: string;
 
-  /** 当前活动请求的 AbortController（用于 Ctrl+C 中断） */
-  private activeAbortController?: AbortController;
+  /** 每个 sessionId 的 AbortController，用于中止正在进行的 chat */
+  private activeAbortControllers = new Map<string, AbortController>();
 
   constructor(
     router: LLMRouter,
@@ -358,21 +358,41 @@ export class Backend extends EventEmitter {
   async chat(sessionId: string, text: string, images?: ImageInput[], documents?: DocumentInput[]): Promise<void> {
     const startTime = Date.now();
     const abortController = new AbortController();
-    this.activeAbortController = abortController;
+    this.activeAbortControllers.set(sessionId, abortController);
+
     try {
       const storedUserParts = await this.buildStoredUserParts(text, images, documents);
       const llmUserParts = this.preparePartsForLLM(storedUserParts);
       await this.handleMessage(sessionId, storedUserParts, llmUserParts, abortController.signal);
     } catch (err) {
-      if (!abortController.signal.aborted) {
+      // 区分用户主动 abort 和其他错误
+      if (abortController.signal.aborted) {
+        logger.info(`chat 已被中止 (session=${sessionId})`);
+        // abort 不视为错误，不 emit 'error'
+      } else {
         const errorMsg = err instanceof Error ? err.message : String(err);
         logger.error(`处理消息失败 (session=${sessionId}):`, err);
         this.emit('error', sessionId, errorMsg);
       }
       this.emit('done', sessionId, Date.now() - startTime);
     } finally {
+      this.activeAbortControllers.delete(sessionId);
       this.activeSessionId = undefined;
-      this.activeAbortController = undefined;
+    }
+  }
+
+  /**
+   * 中止指定会话正在进行的 chat。
+   *
+   * 幂等操作：对不存在或已完成的 sessionId 不报错。
+   * 中止后，chat() 内的 LLM 调用和工具执行会尽快退出，
+   * ToolLoop 会清理历史中不完整的消息以保证格式合法。
+   */
+  abortChat(sessionId: string): void {
+    const controller = this.activeAbortControllers.get(sessionId);
+    if (controller && !controller.signal.aborted) {
+      controller.abort();
+      logger.info(`abortChat: session=${sessionId}`);
     }
   }
 
@@ -550,14 +570,6 @@ export class Backend extends EventEmitter {
     }
   }
 
-  /**
-   * 中断当前正在进行的 chat 调用。
-   * 会取消底层 HTTP 请求并使工具循环提前退出。
-   */
-  abortChat(): void {
-    this.activeAbortController?.abort();
-  }
-
   /** 获取流式设置 */
   isStreamEnabled(): boolean {
     return this.stream;
@@ -602,6 +614,10 @@ export class Backend extends EventEmitter {
     this.toolState.clearAll();
 
     // 1. 加载历史并追加用户消息
+    // ⚠️ 注意：Backend 不处理连续用户消息的合并。
+    //    如果平台层并发调用 chat()，历史中会出现连续两条 role: "user" 的消息。
+    //    部分 LLM API（如 Gemini）不允许同角色消息相邻，可能导致请求失败。
+    //    平台层应自行实现并发控制或消息缓冲（参考 WXWorkPlatform 的实现）。
     const storedHistory = await this.storage.getHistory(sessionId);
     const history = this.prepareHistoryForLLM(storedHistory);
     const isNewSession = storedHistory.length === 0;
@@ -682,6 +698,15 @@ export class Backend extends EventEmitter {
       onMessageAppend: (content) => this.storage.addMessage(sessionId, content),
       signal,
     });
+
+    // 6.1. 如果被 abort，提前退出，不做后续处理
+    if (result.aborted) {
+      // buildAbortResult 已清理内存中的 history，但 onMessageAppend 可能已将不完整的消息写入磁盘。
+      // 用 truncateHistory 将磁盘回滚到与内存一致的状态，防止下次加载时出现 dangling functionCall。
+      await this.storage.truncateHistory(sessionId, result.history.length);
+      this.emit('done', sessionId, Date.now() - startTime);
+      return;
+    }
 
     // 6.5. 工具循环若以“文本回退”结束（如 LLM 调用失败 / 超过最大轮次），
     // ToolLoop 不会追加最后一条 model 消息；这里补一条，统一平台事件与持久化行为。

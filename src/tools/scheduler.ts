@@ -91,6 +91,9 @@ function extractShellCommand(call: FunctionCallPart): string {
  *   1. 命令匹配 denyPatterns  → 必须手动确认（即使 autoApprove: true）
  *   2. 命令匹配 allowPatterns → 自动执行（即使 autoApprove: false）
  *   3. 都不匹配              → 回退到 autoApprove 布尔值
+ *
+ * 注意：showApprovalView（二类审批 / diff 预览）不影响此函数。
+ * 即使 autoApprove: true 跳过了一类审批，调度器仍会在执行前独立检查二类审批。
  */
 function shouldAutoApprove(
   call: FunctionCallPart,
@@ -235,12 +238,8 @@ async function executeSingle(
   const effectivePolicy: ToolPolicyConfig = policy ?? { autoApprove: false };
 
   if (toolState && invocationId) {
+    // ── 一类审批：autoApprove 控制，底部 Y/N ──
     if (!shouldAutoApprove(call, effectivePolicy)) {
-      // ──────────────────────────────────────────────────────────
-      // ⚠️ 审批阻塞点：此处会阻塞直到平台层调用 toolState.transition(id, 'executing')。
-      // 不支持交互审批的平台（如 WXWork）必须在 tool:update 事件中自动批准，
-      // 否则工具执行会永远挂起。参见 WXWorkPlatform.setupBackendListeners()。
-      // ──────────────────────────────────────────────────────────
       toolState.transition(invocationId, 'awaiting_approval');
       const approved = await toolState.waitForApproval(invocationId, signal);
       if (!approved) {
@@ -251,7 +250,24 @@ async function executeSingle(
           },
         };
       }
-    } else {
+      // approved → 状态已被 approveTool 转为 executing
+    }
+
+    // ── 二类审批：showApprovalView 控制，diff 预览视图（执行前） ──
+    if (shouldShowDiffPreview(call, effectivePolicy)) {
+      toolState.transition(invocationId, 'awaiting_apply');
+      const applied = await toolState.waitForApply(invocationId, signal);
+      if (!applied) {
+        return {
+          functionResponse: {
+            name: toolName,
+            response: { error: '用户在 diff 预览中拒绝了执行' },
+          },
+        };
+      }
+      // applied → 状态已被 applyTool 转为 executing
+    } else if (shouldAutoApprove(call, effectivePolicy)) {
+      // 两类审批都跳过时才需要手动设置 executing
       toolState.transition(invocationId, 'executing');
     }
   }
@@ -351,4 +367,29 @@ export async function executePlan(
   }
 
   return responseParts;
+}
+
+
+// ============ 预览审批判断 ============
+
+/** 工具执行前，是否需要进入 awaiting_apply 打开 diff 预览（二类审批） */
+function shouldShowDiffPreview(
+  call: FunctionCallPart,
+  policy: ToolPolicyConfig,
+): boolean {
+  if (policy.showApprovalView !== true) return false;
+  const toolName = call.functionCall.name;
+  if (
+    toolName === 'apply_diff' ||
+    toolName === 'write_file' ||
+    toolName === 'insert_code' ||
+    toolName === 'delete_code'
+  ) {
+    return true;
+  }
+  if (toolName === 'search_in_files') {
+    const args = (call.functionCall.args ?? {}) as Record<string, unknown>;
+    return ((args.mode as string | undefined) ?? 'search') === 'replace';
+  }
+  return false;
 }

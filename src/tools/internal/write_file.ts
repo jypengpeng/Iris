@@ -9,7 +9,7 @@ import * as path from 'path';
 import { ToolDefinition } from '../../types';
 import { resolveProjectPath } from '../utils';
 
-interface WriteEntry {
+export interface WriteEntry {
   path: string;
   content: string;
 }
@@ -29,7 +29,7 @@ function isWriteEntry(value: unknown): value is WriteEntry {
     && typeof (value as Record<string, unknown>).content === 'string';
 }
 
-function normalizeWriteArgs(args: Record<string, unknown>): WriteEntry[] | undefined {
+export function normalizeWriteArgs(args: Record<string, unknown>): WriteEntry[] | undefined {
   if (Array.isArray(args.files) && args.files.length > 0) {
     const normalized = args.files.filter(isWriteEntry);
     return normalized.length === args.files.length

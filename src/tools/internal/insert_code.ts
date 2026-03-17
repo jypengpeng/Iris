@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import { ToolDefinition} from '../../types';
 import { normalizeObjectArrayArg, resolveProjectPath } from '../utils';
 
-interface InsertEntry {
+export interface InsertEntry {
   path: string;
   line: number;
   content: string;
@@ -30,6 +30,14 @@ function isInsertEntry(value: unknown): value is InsertEntry {
     && typeof (value as Record<string, unknown>).path === 'string'
     && typeof (value as Record<string, unknown>).line === 'number'
     && typeof (value as Record<string, unknown>).content === 'string';
+}
+
+export function normalizeInsertArgs(args: Record<string, unknown>): InsertEntry[] | undefined {
+  return normalizeObjectArrayArg(args, {
+    arrayKey: 'files',
+    singularKeys: ['file'],
+    isEntry: isInsertEntry,
+  });
 }
 
 export const insertCode: ToolDefinition = {

@@ -26,6 +26,8 @@ function normalizeToolPolicy(raw: unknown): ToolPolicyConfig | undefined {
     autoApprove: record.autoApprove === true,
   };
 
+  if (typeof record.showApprovalView === 'boolean') policy.showApprovalView = record.showApprovalView;
+
   const allow = parsePatternList(record.allowPatterns);
   if (allow) policy.allowPatterns = allow;
 

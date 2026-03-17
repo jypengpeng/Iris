@@ -9,6 +9,7 @@ import { parseToolsConfig } from '../../config/tools';
 import { isMasked, readEditableConfig, updateEditableConfig } from '../../config/manage';
 import { applyRuntimeConfigReload } from '../../config/runtime';
 import { MCPManager, MCPServerInfo } from '../../mcp';
+import { supportsConsoleDiffApprovalViewSetting } from './diff-approval';
 
 export const CONSOLE_LLM_PROVIDER_OPTIONS = [
   'gemini',
@@ -41,6 +42,8 @@ export interface ConsoleToolPolicySettings {
   configured: boolean;
   autoApprove: boolean;
   registered: boolean;
+  /** 支持 diff 预览的工具：审批时是否打开专门视图 */
+  showApprovalView?: boolean;
   /** Shell 工具专用：白名单模式（透传保存） */
   allowPatterns?: string[];
   /** Shell 工具专用：黑名单模式（透传保存） */
@@ -350,6 +353,9 @@ export class ConsoleSettingsController {
         configured: Object.prototype.hasOwnProperty.call(toolsConfig.permissions, name),
         autoApprove: toolsConfig.permissions[name]?.autoApprove === true,
         registered: registeredToolNames.includes(name),
+        showApprovalView: supportsConsoleDiffApprovalViewSetting(name)
+          ? toolsConfig.permissions[name]?.showApprovalView !== false
+          : toolsConfig.permissions[name]?.showApprovalView,
         allowPatterns: toolsConfig.permissions[name]?.allowPatterns,
         denyPatterns: toolsConfig.permissions[name]?.denyPatterns,
       })),
@@ -394,6 +400,7 @@ export class ConsoleSettingsController {
           return result;
         }
         const entry: Record<string, unknown> = { autoApprove: tool.autoApprove };
+        if (typeof tool.showApprovalView === 'boolean') entry.showApprovalView = tool.showApprovalView;
         if (tool.allowPatterns?.length) entry.allowPatterns = tool.allowPatterns;
         if (tool.denyPatterns?.length) entry.denyPatterns = tool.denyPatterns;
         result[tool.name] = entry;

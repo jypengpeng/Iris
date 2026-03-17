@@ -220,6 +220,15 @@ read_file:
 
 write_file:
   autoApprove: false
+  showApprovalView: true
+
+apply_diff:
+  autoApprove: false
+  showApprovalView: true
+
+search_in_files:
+  autoApprove: false
+  showApprovalView: true
 ```
 
 目前支持：
@@ -227,18 +236,23 @@ write_file:
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `<toolName>.autoApprove` | `boolean` | 当前工具是否自动批准执行。`true` 表示工具输出后立即执行；`false` 表示工具在执行前进入等待确认状态 |
+| `<toolName>.showApprovalView` | `boolean` | Console TUI 中是否打开 diff 审批视图。用于 `apply_diff`、`write_file`、`insert_code`、`delete_code`、`search_in_files`（replace 模式）。默认 `true`。设为 `false` 时，退回到底部 `Y/N` 确认提示 |
 
 示例说明：
 
 - `read_file.autoApprove: true`：允许 `read_file`，并且直接执行
 - `write_file.autoApprove: false`：允许 `write_file`，但执行前需要确认
+- `write_file.showApprovalView: true`：在 Console TUI 中打开写入 diff 审批页
 - `shell` 未填写：`shell` 不允许执行
 
 当某个工具配置为 `autoApprove: false` 时：
 
 - Console TUI 会在工具运行到该步骤时显示确认提示
-- 按 `Y` 批准执行
-- 按 `N` 拒绝执行
+- 普通工具按 `Y` 批准执行，按 `N` 拒绝执行
+- `apply_diff`、`write_file`、`insert_code`、`delete_code` 会在 `showApprovalView: true` 时打开 diff 审批页
+- `search_in_files` 仅在 `mode: replace` 且 `showApprovalView: true` 时打开 diff 审批页
+- diff 审批页中可按 `Y` / `N`，也可在查看后按 `Enter` 确认当前选项
+- diff 审批页右侧有滚动条，可用鼠标滚轮查看全部内容
 
 建议：
 

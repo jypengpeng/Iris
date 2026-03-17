@@ -20,6 +20,7 @@ import {
   createDefaultMCPServerEntry,
   createEmptyModel,
 } from '../settings';
+import { getConsoleDiffApprovalViewDescription, supportsConsoleDiffApprovalViewSetting } from '../diff-approval';
 
 type SettingsSection = 'general' | 'mcp' | 'tools';
 type StatusKind = 'info' | 'success' | 'warning' | 'error';
@@ -31,6 +32,7 @@ type RowTarget =
   | { kind: 'modelDefault'; modelIndex: number }
   | { kind: 'systemField'; field: 'systemPrompt' | 'maxToolRounds' | 'stream' }
   | { kind: 'toolPolicy'; toolIndex: number }
+  | { kind: 'toolApprovalView'; toolIndex: number }
   | { kind: 'mcpField'; serverIndex: number; field: 'name' | 'enabled' | 'transport' | 'command' | 'args' | 'cwd' | 'url' | 'authHeader' | 'timeout' }
   | { kind: 'action'; action: 'addModel' | 'addMcp' };
 
@@ -216,6 +218,15 @@ function buildRows(snapshot: ConsoleSettingsSnapshot, termWidth: number): Settin
       target: { kind: 'toolPolicy', toolIndex: index },
       description: '空格或左右方向键切换。', indent: 2,
     });
+
+    if (supportsConsoleDiffApprovalViewSetting(tool.name)) {
+      pushField(
+        `tool.${tool.name}.approvalView`, 'tools', '审批视图',
+        boolText(tool.showApprovalView !== false),
+        { kind: 'toolApprovalView', toolIndex: index },
+        getConsoleDiffApprovalViewDescription(tool.name), 6,
+      );
+    }
   });
 
   rows.push({ id: 'section.mcp', kind: 'section', section: 'mcp', label: `MCP 服务器（${snapshot.mcpServers.length}）` });
@@ -433,6 +444,11 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
         snapshot.system.stream = !snapshot.system.stream;
         return;
       }
+      if (target.kind === 'toolApprovalView') {
+        const tool = snapshot.toolPolicies[target.toolIndex];
+        if (tool) tool.showApprovalView = tool.showApprovalView === false;
+        return;
+      }
       if (target.kind === 'mcpField' && target.field === 'enabled') {
         const server = snapshot.mcpServers[target.serverIndex];
         if (server) server.enabled = !server.enabled;
@@ -605,7 +621,7 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
       return;
     }
     if (key.name === 'space' && selectedRow?.target) {
-      if (selectedRow.target.kind === 'modelDefault' || (selectedRow.target.kind === 'systemField' && selectedRow.target.field === 'stream') || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'enabled')) {
+      if (selectedRow.target.kind === 'modelDefault' || selectedRow.target.kind === 'toolApprovalView' || (selectedRow.target.kind === 'systemField' && selectedRow.target.field === 'stream') || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'enabled')) {
         applyToggle(selectedRow.target);
       } else if (selectedRow.target.kind === 'toolPolicy') {
         applyCycle(selectedRow.target, 1);
@@ -618,7 +634,7 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
         else handleAddModel();
         return;
       }
-      if (selectedRow.target.kind === 'modelDefault' || (selectedRow.target.kind === 'systemField' && selectedRow.target.field === 'stream') || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'enabled')) {
+      if (selectedRow.target.kind === 'modelDefault' || selectedRow.target.kind === 'toolApprovalView' || (selectedRow.target.kind === 'systemField' && selectedRow.target.field === 'stream') || (selectedRow.target.kind === 'mcpField' && selectedRow.target.field === 'enabled')) {
         applyToggle(selectedRow.target);
         return;
       }
@@ -661,7 +677,7 @@ export function SettingsView({ initialSection = 'general', onBack, onLoad, onSav
       </box>
 
       <text><strong>设置中心</strong></text>
-      <text fg="#888">在终端内管理模型池、系统参数与 MCP 服务器。</text>
+      <text fg="#888">在终端内管理模型池、系统参数、工具策略与 MCP 服务器。</text>
       <text fg={isDirty ? C.warn : C.accent}>
         {isDirty ? '\u25CF 有未保存修改' : '\u2713 当前草稿已同步'}
         {saving ? '  \u00b7  保存中...' : ''}

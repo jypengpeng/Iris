@@ -11,6 +11,8 @@ read_file:
   autoApprove: true
 search_in_files:
   autoApprove: true
+  # 如需对 mode: replace 打开 diff 审批页，可改为 false，并开启 showApprovalView
+  showApprovalView: true
 find_files:
   autoApprove: true
 list_files:
@@ -19,12 +21,18 @@ list_files:
 # 修改类工具：默认需要确认
 write_file:
   autoApprove: false
+  # Console TUI 中是否打开 diff 审批视图；设为 false 时退回到底部 Y/N 确认提示
+  showApprovalView: true
 apply_diff:
   autoApprove: false
+  # Console TUI 中是否打开 diff 审批视图；设为 false 时退回到底部 Y/N 确认提示
+  showApprovalView: true
 insert_code:
   autoApprove: false
+  showApprovalView: true
 delete_code:
   autoApprove: false
+  showApprovalView: true
 delete_file:
   autoApprove: false
 create_directory:

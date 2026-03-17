@@ -77,6 +77,9 @@ export interface ToolPolicyConfig {
    *   2. allowPatterns — 匹配则 **自动执行**（即使 autoApprove: false）
    *   3. autoApprove   — 以上都不匹配时的兜底策略
    */
+  /** Console TUI 专用：是否显示 diff 审批视图。apply_diff、write_file、search_in_files.replace 默认 true */
+  showApprovalView?: boolean;
+
   allowPatterns?: string[];
   denyPatterns?: string[];
 }

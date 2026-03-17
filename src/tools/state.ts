@@ -25,10 +25,10 @@ const logger = createLogger('ToolState');
 /** 合法的状态转换表 */
 const VALID_TRANSITIONS: Record<ToolStatus, ToolStatus[]> = {
   streaming:         ['queued', 'error'],
-  queued:            ['awaiting_approval', 'executing', 'error'],
-  awaiting_approval: ['executing', 'error'],
+  queued:            ['awaiting_approval', 'awaiting_apply', 'executing', 'error'],
+  awaiting_approval: ['awaiting_apply', 'executing', 'error'],
   executing:         ['awaiting_apply', 'success', 'warning', 'error'],
-  awaiting_apply:    ['success', 'warning', 'error'],
+  awaiting_apply:    ['executing', 'success', 'warning', 'error'],
   success:           [],
   warning:           [],
   error:             [],
@@ -264,6 +264,60 @@ export class ToolStateManager extends EventEmitter {
       if (signal) {
         signal.addEventListener('abort', onAbort, { once: true });
       }
+    });
+  }
+
+  // ---- 应用等待 ----
+
+  /**
+   * 等待用户在 diff 预览中确认或拒绝（执行前二类审批）。
+   *
+   * 调用方应先将工具状态转为 `awaiting_apply`，然后调用此方法阻塞。
+   * 当外部代码将状态转为 `executing` 时返回 `true`（用户在 diff 预览中批准）；
+   * 当外部代码将状态转为 `error` 时返回 `false`（用户在 diff 预览中拒绝）。
+   *
+   * 支持 AbortSignal：传入后，abort 触发时自动将工具状态转为 error 并返回 false。
+   */
+  waitForApply(id: string, signal?: AbortSignal): Promise<boolean> {
+    const invocation = this.invocations.get(id);
+    if (!invocation) {
+      throw new Error(`工具调用不存在: ${id}`);
+    }
+
+    if (invocation.status !== 'awaiting_apply') {
+      return Promise.resolve(TERMINAL_STATUSES.has(invocation.status) ? invocation.status === 'success' : false);
+    }
+
+    if (signal?.aborted) {
+      try { this.transition(id, 'error', { error: 'Operation aborted' }); } catch { /* 已终态 */ }
+      return Promise.resolve(false);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const cleanup = () => {
+        this.off('stateChange', onStateChange);
+        signal?.removeEventListener('abort', onAbort);
+      };
+
+      const onStateChange = (event: ToolStateChangeEvent) => {
+        if (event.invocation.id !== id) return;
+        if (event.invocation.status === 'executing') {
+          cleanup();
+          resolve(true);
+        } else if (TERMINAL_STATUSES.has(event.invocation.status)) {
+          cleanup();
+          resolve(false);
+        }
+      };
+
+      const onAbort = () => {
+        cleanup();
+        try { this.transition(id, 'error', { error: 'Operation aborted' }); } catch { /* ignore */ }
+        resolve(false);
+      };
+
+      this.on('stateChange', onStateChange);
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
     });
   }
 }

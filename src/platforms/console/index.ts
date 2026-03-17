@@ -270,6 +270,9 @@ export class ConsolePlatform extends PlatformAdapter {
         onToolApproval: (toolId: string, approved: boolean) => {
           this.backend.approveTool(toolId, approved);
         },
+        onToolApply: (toolId: string, applied: boolean) => {
+          this.backend.applyTool(toolId, applied);
+        },
         onAbort: () => {
           this.backend.abortChat(this.sessionId);
         },

@@ -6,6 +6,7 @@
  * 此 hook 订阅该事件，将粘贴文本回调给调用方。
  */
 import { useEffect, useCallback, useLayoutEffect, useRef } from 'react';
+import { decodePasteBytes, type PasteEvent } from '@opentui/core';
 import { useAppContext } from '@opentui/react';
 
 export function usePaste(handler: (text: string) => void): void {
@@ -18,8 +19,8 @@ export function usePaste(handler: (text: string) => void): void {
   });
 
   const stableHandler = useCallback(
-    (event: { text: string }) => {
-      handlerRef.current(event.text);
+    (event: PasteEvent) => {
+      handlerRef.current(decodePasteBytes(event.bytes));
     },
     [],
   );
@@ -29,5 +30,5 @@ export function usePaste(handler: (text: string) => void): void {
     return () => {
       keyHandler?.off('paste', stableHandler);
     };
-  }, [keyHandler]);
+  }, [keyHandler, stableHandler]);
 }

@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import { ToolDefinition } from '../../types';
 import { normalizeObjectArrayArg, resolveProjectPath } from '../utils';
 
-interface DeleteCodeEntry {
+export interface DeleteCodeEntry {
   path: string;
   start_line: number;
   end_line: number;
@@ -30,6 +30,14 @@ function isDeleteCodeEntry(value: unknown): value is DeleteCodeEntry {
     && typeof (value as Record<string, unknown>).path === 'string'
     && typeof (value as Record<string, unknown>).start_line === 'number'
     && typeof (value as Record<string, unknown>).end_line === 'number';
+}
+
+export function normalizeDeleteCodeArgs(args: Record<string, unknown>): DeleteCodeEntry[] | undefined {
+  return normalizeObjectArrayArg(args, {
+    arrayKey: 'files',
+    singularKeys: ['file'],
+    isEntry: isDeleteCodeEntry,
+  });
 }
 
 export const deleteCode: ToolDefinition = {

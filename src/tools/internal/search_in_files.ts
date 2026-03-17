@@ -57,9 +57,9 @@ interface ReplaceFileResult {
 
 type ToolMode = 'search' | 'replace';
 
-type TextEncoding = 'utf-8' | 'utf-16le' | 'utf-16be';
+export type TextEncoding = 'utf-8' | 'utf-16le' | 'utf-16be';
 
-interface DetectedText {
+export interface DetectedText {
   text: string;
   encoding: TextEncoding;
   hasBom: boolean;
@@ -67,7 +67,7 @@ interface DetectedText {
   hasCRLF: boolean;
 }
 
-function toPosix(p: string): string {
+export function toPosix(p: string): string {
   return p.split(path.sep).join('/');
 }
 
@@ -84,7 +84,7 @@ function clampPositiveInteger(value: unknown, fallback: number): number {
   return value === 0 ? fallback : value;
 }
 
-function globToRegExp(glob: string): RegExp {
+export function globToRegExp(glob: string): RegExp {
   // 基础 glob：
   // - *  匹配除 / 外任意长度字符
   // - ?  匹配除 / 外单个字符
@@ -135,7 +135,7 @@ function shouldIgnoreByPath(relativePosixPath: string): boolean {
   return parts.some(p => DEFAULT_IGNORED_DIRS.has(p));
 }
 
-function isLikelyBinary(buf: Buffer): boolean {
+export function isLikelyBinary(buf: Buffer): boolean {
   const n = Math.min(buf.length, BINARY_DETECT_BYTES);
   if (n === 0) return false;
 
@@ -165,7 +165,7 @@ function swapByteOrder16(buf: Buffer): Buffer {
   return out;
 }
 
-function decodeText(buf: Buffer): DetectedText {
+export function decodeText(buf: Buffer): DetectedText {
   const hasCRLF = buf.includes(Buffer.from('\r\n'));
 
   // UTF-8 BOM
@@ -227,7 +227,7 @@ function encodeText(text: string, encoding: TextEncoding, hasBom: boolean, prefe
   return hasBom ? Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), body]) : body;
 }
 
-function buildSearchRegex(query: string, isRegex: boolean): RegExp {
+export function buildSearchRegex(query: string, isRegex: boolean): RegExp {
   if (!query || !query.trim()) {
     throw new Error('query 不能为空');
   }
@@ -272,7 +272,7 @@ function buildContext(lines: string[], lineNumber1Based: number, contextLines: n
   return out.join('\n');
 }
 
-function walkFiles(
+export function walkFiles(
   rootAbs: string,
   onFile: (fileAbs: string, relPosix: string) => void,
   shouldStop: () => boolean,

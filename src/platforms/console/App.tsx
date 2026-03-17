@@ -15,6 +15,7 @@ import { SessionMeta } from '../../storage/base';
 import { MessageItem, ChatMessage, MessagePart } from './components/MessageItem';
 import { GeneratingTimer } from './components/GeneratingTimer';
 import { InputBar } from './components/InputBar';
+import { DiffApprovalView } from './components/DiffApprovalView';
 import { SettingsView } from './components/SettingsView';
 import { ConsoleSettingsSaveResult, ConsoleSettingsSnapshot } from './settings';
 import { C } from './theme';
@@ -106,6 +107,7 @@ interface AppProps {
   onRedo: (restoredRole: string) => void;
   onClearRedoStack: () => void;
   onToolApproval: (toolId: string, approved: boolean) => void;
+  onToolApply: (toolId: string, applied: boolean) => void;
   onAbort: () => void;
   onNewSession: () => void;
   onLoadSession: (id: string) => Promise<void>;
@@ -123,7 +125,7 @@ interface AppProps {
 }
 
 type ViewMode = 'chat' | 'session-list' | 'model-list' | 'settings';
-export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToolApproval, onAbort, onNewSession, onLoadSession, onListSessions, onRunCommand, onListModels, onSwitchModel, onLoadSettings, onSaveSettings, onExit, modeName, modelId, modelName, contextWindow }: AppProps) {
+export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToolApproval, onToolApply, onAbort, onNewSession, onLoadSession, onListSessions, onRunCommand, onListModels, onSwitchModel, onLoadSettings, onSaveSettings, onExit, modeName, modelId, modelName, contextWindow }: AppProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingParts, setStreamingParts] = useState<MessagePart[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -144,7 +146,12 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
   const renderer = useRenderer();
 
   const [pendingApprovals, setPendingApprovals] = useState<ToolInvocation[]>([]);
+  const [pendingApplies, setPendingApplies] = useState<ToolInvocation[]>([]);
   const [approvalChoice, setApprovalChoice] = useState<'approve' | 'reject'>('approve');
+  const [approvalDiffView, setApprovalDiffView] = useState<'unified' | 'split'>('unified');
+  const [approvalDiffShowLineNumbers, setApprovalDiffShowLineNumbers] = useState(true);
+  const [approvalDiffWrapMode, setApprovalDiffWrapMode] = useState<'none' | 'word'>('word');
+  const [approvalPreviewIndex, setApprovalPreviewIndex] = useState(0);
   const streamPartsRef = useRef<MessagePart[]>([]);
   const toolInvocationsRef = useRef<ToolInvocation[]>([]);
   const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -178,6 +185,20 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
     if (!renderer) return;
     renderer.useMouse = !copyMode;
   }, [renderer, copyMode]);
+
+  // 一类审批切换时重置选择
+  useEffect(() => {
+    setApprovalChoice('approve');
+  }, [pendingApprovals[0]?.id]);
+
+  // 二类审批切换时重置 diff 视图状态
+  useEffect(() => {
+    setApprovalChoice('approve');
+    setApprovalDiffView('unified');
+    setApprovalDiffShowLineNumbers(true);
+    setApprovalDiffWrapMode('word');
+    setApprovalPreviewIndex(0);
+  }, [pendingApplies[0]?.id]);
 
   // ============ Undo/Redo ============
   const undoRedoRef = useRef<UndoRedoStack>(createUndoRedoStack());
@@ -249,6 +270,7 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
         const copy = [...invocations];
         toolInvocationsRef.current = copy;
         setPendingApprovals(copy.filter(inv => inv.status === 'awaiting_approval'));
+        setPendingApplies(copy.filter(inv => inv.status === 'awaiting_apply'));
         setMessages((prev) => {
           if (prev.length === 0) return prev;
           const last = prev[prev.length - 1];
@@ -273,7 +295,7 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
         setIsGenerating(generating);
       },
       clearMessages() { setMessages([]); setStreamingParts([]); streamPartsRef.current = []; uncommittedStreamPartsRef.current = []; },
-      commitTools() { toolInvocationsRef.current = []; setPendingApprovals([]); },
+      commitTools() { toolInvocationsRef.current = []; setPendingApprovals([]); setPendingApplies([]); },
       setUsage(usage) { setContextTokens(usage.totalTokenCount ?? 0); lastUsageRef.current = usage; },
       finalizeResponse(durationMs) {
         const usage = lastUsageRef.current;
@@ -378,7 +400,31 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
       return;
     }
 
-    // 工具审批拦截：左右/上下箭头切换选项，回车确认
+    // 二类审批拦截：awaiting_apply → diff 预览视图
+    if (isGenerating && pendingApplies.length > 0) {
+      const current = pendingApplies[0];
+      if (key.name === 'up' || key.name === 'down') {
+        setApprovalPreviewIndex((prev) => key.name === 'up' ? prev - 1 : prev + 1);
+        return;
+      }
+      if (key.name === 'tab' || key.name === 'left' || key.name === 'right') {
+        setApprovalChoice((prev) => prev === 'approve' ? 'reject' : 'approve');
+        return;
+      }
+      if (key.name === 'v') { setApprovalDiffView((prev) => prev === 'unified' ? 'split' : 'unified'); return; }
+      if (key.name === 'l') { setApprovalDiffShowLineNumbers((prev) => !prev); return; }
+      if (key.name === 'w') { setApprovalDiffWrapMode((prev) => prev === 'none' ? 'word' : 'none'); return; }
+      if (key.name === 'enter' || key.name === 'return') {
+        onToolApply(current.id, approvalChoice === 'approve');
+        setApprovalChoice('approve');
+        return;
+      }
+      if (key.name === 'y') { onToolApply(current.id, true); setApprovalChoice('approve'); return; }
+      if (key.name === 'n') { onToolApply(current.id, false); setApprovalChoice('approve'); return; }
+      return;
+    }
+
+    // 一类审批拦截：awaiting_approval → 底部 Y/N
     if (isGenerating && pendingApprovals.length > 0) {
       if (key.name === 'left' || key.name === 'up' || key.name === 'right' || key.name === 'down') {
         setApprovalChoice((prev) => prev === 'approve' ? 'reject' : 'approve');
@@ -432,6 +478,8 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
   const contextStr = contextTokens > 0 ? contextTokens.toLocaleString() : '-';
   const contextLimitStr = currentContextWindow ? `/${currentContextWindow.toLocaleString()}` : '';
   const contextPercent = contextTokens > 0 && currentContextWindow ? ` (${Math.round(contextTokens / currentContextWindow * 100)}%)` : '';
+
+  const currentApply = isGenerating ? pendingApplies[0] : undefined;
 
   // ============ 设置视图 ============
   if (viewMode === 'settings') {
@@ -491,6 +539,20 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
           })}
         </scrollbox>
       </box>
+    );
+  }
+
+  if (currentApply) {
+    return (
+      <DiffApprovalView
+        invocation={currentApply}
+        pendingCount={pendingApplies.length}
+        choice={approvalChoice}
+        view={approvalDiffView}
+        showLineNumbers={approvalDiffShowLineNumbers}
+        wrapMode={approvalDiffWrapMode}
+        previewIndex={approvalPreviewIndex}
+      />
     );
   }
 

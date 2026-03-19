@@ -30,6 +30,8 @@ export function App({ irisDir }: AppProps) {
     telegramToken: "",
     larkAppId: "",
     larkAppSecret: "",
+    qqWsUrl: "ws://127.0.0.1:3001",
+    qqSelfId: "",
   })
   const [skippedSteps, setSkippedSteps] = useState<Record<SkippableStep, boolean>>({
     provider: false,
@@ -148,6 +150,8 @@ export function App({ irisDir }: AppProps) {
               telegramToken: opts.telegramToken ?? "",
               larkAppId: opts.larkAppId ?? "",
               larkAppSecret: opts.larkAppSecret ?? "",
+              qqWsUrl: opts.qqWsUrl ?? "ws://127.0.0.1:3001",
+              qqSelfId: opts.qqSelfId ?? "",
             })
             setStep("summary")
             setStepSkipped("platform", false)

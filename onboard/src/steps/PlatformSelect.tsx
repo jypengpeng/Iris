@@ -32,18 +32,25 @@ const PLATFORMS = [
     label: "企业微信 (WXWork)",
     desc: "企业微信智能机器人，WebSocket 长连接模式",
   },
+  {
+    value: "qq",
+    label: "QQ (NapCat)",
+    desc: "个人 QQ 账号，通过 NapCat OneBot v11 协议对接",
+  },
 ] as const
 
-type SubStep = "select" | "webPort" | "wxworkBotId" | "wxworkSecret" | "telegramToken" | "larkAppId" | "larkAppSecret"
+type SubStep = "select" | "webPort" | "wxworkBotId" | "wxworkSecret" | "telegramToken" | "larkAppId" | "larkAppSecret" | "qqWsUrl" | "qqSelfId"
 
 interface PlatformSelectProps {
-  onSelect: (platform: "console" | "web" | "wxwork" | "telegram" | "lark", opts: {
+  onSelect: (platform: "console" | "web" | "wxwork" | "telegram" | "lark" | "qq", opts: {
     port?: number
     wxworkBotId?: string
     wxworkSecret?: string
     telegramToken?: string
     larkAppId?: string
     larkAppSecret?: string
+    qqWsUrl?: string
+    qqSelfId?: string
   }) => void
   // 跳过时不传递任何平台参数，App 侧不修改 config，
   // writeConfigs 检测到 platform 被跳过后会保留已有文件不做修改
@@ -68,6 +75,10 @@ export function PlatformSelect({ onSelect, onSkip, onBack }: PlatformSelectProps
   // 飞书 App ID / App Secret 输入
   const [larkAppIdState, larkAppIdActions] = useTextInput("")
   const [larkAppSecretState, larkAppSecretActions] = useTextInput("")
+
+  // QQ WS URL / Self ID 输入
+  const [qqWsUrlState, qqWsUrlActions] = useTextInput("ws://127.0.0.1:3001")
+  const [qqSelfIdState, qqSelfIdActions] = useTextInput("")
 
   const cursorVisible = useCursorBlink()
 
@@ -194,6 +205,41 @@ export function PlatformSelect({ onSelect, onSkip, onBack }: PlatformSelectProps
       return
     }
 
+    // ---- QQ WS URL 输入 ----
+    if (subStep === "qqWsUrl") {
+      if (key.name === "return") {
+        if (qqWsUrlState.value.trim().length > 0) {
+          setSubStep("qqSelfId")
+        }
+        return
+      }
+      if (key.name === "escape") {
+        setSubStep("select")
+        return
+      }
+      qqWsUrlActions.handleKey(key)
+      return
+    }
+
+    // ---- QQ Self ID 输入 ----
+    if (subStep === "qqSelfId") {
+      if (key.name === "return") {
+        if (qqSelfIdState.value.trim().length > 0) {
+          onSelect("qq", {
+            qqWsUrl: qqWsUrlState.value.trim(),
+            qqSelfId: qqSelfIdState.value.trim(),
+          })
+        }
+        return
+      }
+      if (key.name === "escape") {
+        setSubStep("qqWsUrl")
+        return
+      }
+      qqSelfIdActions.handleKey(key)
+      return
+    }
+
     // ---- 平台选择列表 ----
     if (key.name === "up" || key.name === "k") {
       setSelectedIndex((i) => Math.max(0, i - 1))
@@ -211,6 +257,8 @@ export function PlatformSelect({ onSelect, onSkip, onBack }: PlatformSelectProps
         setSubStep("telegramToken")
       } else if (selected === "lark") {
         setSubStep("larkAppId")
+      } else if (selected === "qq") {
+        setSubStep("qqWsUrl")
       } else {
         onSelect("console", {})
       }
@@ -249,6 +297,12 @@ export function PlatformSelect({ onSelect, onSkip, onBack }: PlatformSelectProps
         break
       case "larkAppSecret":
         larkAppSecretActions.insert(cleaned)
+        break
+      case "qqWsUrl":
+        qqWsUrlActions.insert(cleaned)
+        break
+      case "qqSelfId":
+        qqSelfIdActions.insert(cleaned)
         break
       // "select" 列表阶段不需要粘贴
     }
@@ -380,6 +434,40 @@ export function PlatformSelect({ onSelect, onSkip, onBack }: PlatformSelectProps
             />
           </box>
           <text fg="#636e72">Enter 确认  |  Ctrl+N 跳过此环节  |  Esc 返回 App ID</text>
+        </box>
+      )}
+
+      {subStep === "qqWsUrl" && (
+        <box flexDirection="column" gap={1}>
+          <text fg="#dfe6e9">NapCat WebSocket 地址：</text>
+          <text fg="#636e72">NapCat OneBot v11 正向 WebSocket 地址，默认 ws://127.0.0.1:3001</text>
+          <box borderStyle="single" borderColor="#00b894" paddingLeft={1} paddingRight={1}>
+            <InputDisplay
+              value={qqWsUrlState.value}
+              cursor={qqWsUrlState.cursor}
+              isActive={true}
+              cursorVisible={cursorVisible}
+              placeholder="ws://127.0.0.1:3001"
+            />
+          </box>
+          <text fg="#636e72">Enter 下一步  |  Ctrl+N 跳过此环节  |  Esc 返回选择</text>
+        </box>
+      )}
+
+      {subStep === "qqSelfId" && (
+        <box flexDirection="column" gap={1}>
+          <text fg="#dfe6e9">机器人 QQ 号：</text>
+          <text fg="#636e72">用于群聊 @ 判断，填写登录 NapCat 的 QQ 号</text>
+          <box borderStyle="single" borderColor="#00b894" paddingLeft={1} paddingRight={1}>
+            <InputDisplay
+              value={qqSelfIdState.value}
+              cursor={qqSelfIdState.cursor}
+              isActive={true}
+              cursorVisible={cursorVisible}
+              placeholder="123456789"
+            />
+          </box>
+          <text fg="#636e72">Enter 确认  |  Ctrl+N 跳过此环节  |  Esc 返回 WS 地址</text>
         </box>
       )}
     </box>

@@ -18,7 +18,7 @@ export interface OnboardConfig {
   model: string
   baseUrl: string
   modelName: string
-  platform: "console" | "web" | "wxwork" | "telegram" | "lark"
+  platform: "console" | "web" | "wxwork" | "telegram" | "lark" | "qq"
   webPort: number
   /** 企业微信 Bot ID（platform === 'wxwork' 时使用） */
   wxworkBotId: string
@@ -30,6 +30,10 @@ export interface OnboardConfig {
   larkAppId: string
   /** 飞书 App Secret（platform === 'lark' 时使用） */
   larkAppSecret: string
+  /** QQ NapCat WebSocket 地址（platform === 'qq' 时使用） */
+  qqWsUrl: string
+  /** QQ 机器人自身 QQ 号（platform === 'qq' 时使用） */
+  qqSelfId: string
 }
 
 /** 各步骤的跳过状态 */
@@ -192,6 +196,17 @@ export function writeConfigs(irisDir: string, config: OnboardConfig, skippedStep
         ...existingLark,
         appId: config.larkAppId,
         appSecret: config.larkAppSecret,
+      }
+    }
+    if (config.platform === "qq") {
+      // 保留已有的 qq 配置（groupMode、showToolStatus 等），仅更新 wsUrl 和 selfId
+      const existingQQ = (existingPlatform.qq && typeof existingPlatform.qq === "object")
+        ? existingPlatform.qq as Record<string, unknown>
+        : {}
+      platformConfig.qq = {
+        ...existingQQ,
+        wsUrl: config.qqWsUrl,
+        selfId: config.qqSelfId,
       }
     }
     writeYaml(platformPath, platformConfig, "平台配置")

@@ -26,6 +26,7 @@ import { ModeRegistry, ModeDefinition, applyToolFilter } from '../modes';
 import { OCRService, createOCRTextPart, isOCRTextPart, stripOCRTextMarker } from '../ocr';
 import { ToolLoop, ToolLoopConfig, LLMCaller } from './tool-loop';
 import { createLogger } from '../logger';
+import { COMPUTER_USE_FUNCTION_NAMES } from '../computer-use/tools';
 import {
   Content, Part, LLMRequest, UsageMetadata, ToolInvocation,
   extractText, isFunctionCallPart, isFunctionResponsePart, isInlineDataPart, isTextPart,
@@ -263,6 +264,8 @@ export interface BackendConfig {
   currentLLMConfig?: LLMConfig;
   /** OCR 服务（当主模型不支持 vision 时回退使用） */
   ocrService?: OCRService;
+  /** Computer Use 截图保留的最近轮次数（默认 3） */
+  maxRecentScreenshots?: number;
 }
 
 export interface BackendEvents {
@@ -303,6 +306,7 @@ export class Backend extends EventEmitter {
   private defaultMode?: string;
   private currentLLMConfig?: LLMConfig;
   private ocrService?: OCRService;
+  private maxRecentScreenshots: number;
 
   private toolLoop: ToolLoop;
   private toolLoopConfig: ToolLoopConfig;
@@ -341,6 +345,7 @@ export class Backend extends EventEmitter {
     this.defaultMode = config?.defaultMode;
     this.currentLLMConfig = config?.currentLLMConfig;
     this.ocrService = config?.ocrService;
+    this.maxRecentScreenshots = config?.maxRecentScreenshots ?? 3;
 
     this.toolLoopConfig = {
       maxRounds: config?.maxToolRounds ?? 200,
@@ -676,6 +681,7 @@ export class Backend extends EventEmitter {
     systemPrompt?: string;
     currentLLMConfig?: LLMConfig;
     ocrService?: OCRService;
+    maxRecentScreenshots?: number;
   }): void {
     if (opts.stream !== undefined) this.stream = opts.stream;
     if (opts.maxToolRounds !== undefined) this.toolLoopConfig.maxRounds = opts.maxToolRounds;
@@ -683,6 +689,7 @@ export class Backend extends EventEmitter {
     if (opts.systemPrompt !== undefined) this.prompt.setSystemPrompt(opts.systemPrompt);
     if ('currentLLMConfig' in opts) this.currentLLMConfig = opts.currentLLMConfig;
     if ('ocrService' in opts) this.ocrService = opts.ocrService;
+    if (opts.maxRecentScreenshots !== undefined) this.maxRecentScreenshots = opts.maxRecentScreenshots;
     logger.info(`配置已热重载: stream=${this.stream} maxToolRounds=${this.toolLoopConfig.maxRounds} toolPolicies=${Object.keys(this.toolLoopConfig.toolsConfig.permissions).length}`);
   }
 
@@ -1089,13 +1096,57 @@ export class Backend extends EventEmitter {
   }
 
   private prepareHistoryForLLM(history: Content[]): Content[] {
-    return history.map((content) => ({
+    const prepared = history.map((content) => ({
       role: content.role,
       parts: this.preparePartsForLLM(content.parts),
       usageMetadata: content.usageMetadata,
       durationMs: content.durationMs,
       streamOutputDurationMs: content.streamOutputDurationMs,
     }));
+
+    // Computer Use 截图清理：只保留最近 N 轮含截图的工具响应，
+    // 超出的旧轮次中把 functionResponse.parts（截图）剥离以节省 token。
+    // 与 Gemini 官方示例的处理逻辑一致。
+    this.stripOldScreenshots(prepared);
+
+    return prepared;
+  }
+
+  /**
+   * 从历史末尾向前扫描，保留最近 maxRecentScreenshots 轮含 Computer Use 截图
+   * 的工具响应，超出部分把 functionResponse.parts 置空。
+   * 直接修改传入的数组，不产生新对象。
+   */
+  private stripOldScreenshots(history: Content[]): void {
+    const max = this.maxRecentScreenshots;
+    if (max === Infinity) return;  // 全部保留
+
+    let screenshotTurns = 0;
+
+    for (let i = history.length - 1; i >= 0; i--) {
+      const content = history[i];
+      if (content.role !== 'user') continue;
+
+      // 检查此 user 轮是否包含带截图的 Computer Use 工具响应
+      const hasCUScreenshot = content.parts.some(
+        p => isFunctionResponsePart(p)
+          && p.functionResponse.parts?.length
+          && COMPUTER_USE_FUNCTION_NAMES.has(p.functionResponse.name),
+      );
+      if (!hasCUScreenshot) continue;
+
+      screenshotTurns++;
+      if (screenshotTurns > max) {
+        // 剥离此轮中所有 Computer Use 工具响应的截图
+        for (const part of content.parts) {
+          if (isFunctionResponsePart(part)
+            && part.functionResponse.parts?.length
+            && COMPUTER_USE_FUNCTION_NAMES.has(part.functionResponse.name)) {
+            part.functionResponse.parts = undefined;
+          }
+        }
+      }
+    }
   }
 
   private preparePartsForLLM(parts: Part[]): Part[] {
@@ -1153,6 +1204,10 @@ export class Backend extends EventEmitter {
             name: part.functionResponse.name,
             response: JSON.parse(JSON.stringify(part.functionResponse.response ?? {})),
             callId: part.functionResponse.callId,
+            // 保留工具结果中的多模态内联数据（截图、音频等）
+            ...(part.functionResponse.parts
+              ? { parts: part.functionResponse.parts.map(p => ({ inlineData: { ...p.inlineData } })) }
+              : {}),
           },
         });
         continue;

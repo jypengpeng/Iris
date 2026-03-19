@@ -61,33 +61,43 @@ export class GeminiFormat implements FormatAdapter {
     if (candidate?.content?.parts) {
       for (const part of candidate.content.parts) {
         const rawPart = part as any;
+        const hasFunctionCall = 'functionCall' in rawPart;
         const hasText = 'text' in rawPart;
         const hasSignature = 'thoughtSignature' in rawPart;
 
-        if (hasText || hasSignature) {
-          if (!chunk.partsDelta) chunk.partsDelta = [];
-          
-          // 处理签名
-          if (hasSignature) {
-            if (!rawPart.thoughtSignatures) rawPart.thoughtSignatures = {};
-            rawPart.thoughtSignatures.gemini = rawPart.thoughtSignature;
-            
-            if (!chunk.thoughtSignatures) chunk.thoughtSignatures = {};
-            chunk.thoughtSignatures.gemini = rawPart.thoughtSignature;
-            
-            delete rawPart.thoughtSignature;
-          }
+        // 签名可能附着在 functionCall part 上，需先提取再决定归类
+        if (hasSignature) {
+          if (!rawPart.thoughtSignatures) rawPart.thoughtSignatures = {};
+          rawPart.thoughtSignatures.gemini = rawPart.thoughtSignature;
 
-          // 处理文本及清理
+          if (!chunk.thoughtSignatures) chunk.thoughtSignatures = {};
+          chunk.thoughtSignatures.gemini = rawPart.thoughtSignature;
+
+          delete rawPart.thoughtSignature;
+        }
+
+        if (hasText || (hasSignature && !hasFunctionCall)) {
+          if (!chunk.partsDelta) chunk.partsDelta = [];
+
           if (hasText) {
             if (rawPart.text && !rawPart.thought) {
               chunk.textDelta = (chunk.textDelta ?? '') + rawPart.text;
             }
           }
 
-          chunk.partsDelta.push(rawPart);
+          // 如果同时有 functionCall，只 push 文本部分，functionCall 在下面单独处理
+          if (!hasFunctionCall) {
+            chunk.partsDelta.push(rawPart);
+          } else {
+            // 拆出文本 part 单独 push
+            const textOnly: Record<string, unknown> = { text: rawPart.text };
+            if (rawPart.thought) textOnly.thought = rawPart.thought;
+            if (rawPart.thoughtSignatures) textOnly.thoughtSignatures = rawPart.thoughtSignatures;
+            chunk.partsDelta.push(textOnly);
+          }
         }
-        if ('functionCall' in part) {
+
+        if (hasFunctionCall) {
           if (!chunk.partsDelta) chunk.partsDelta = [];
           if (!chunk.functionCalls) chunk.functionCalls = [];
           chunk.functionCalls.push(part);

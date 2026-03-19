@@ -99,6 +99,28 @@ export async function bootstrap(): Promise<BootstrapResult> {
     tools.registerAll(mcpManager.getTools());
   }
 
+  // ---- 3.2 注册 Computer Use 工具 ----
+  if (config.computerUse?.enabled) {
+    try {
+      const { BrowserEnvironment, createComputerUseTools } = await import('./computer-use');
+      // Phase 1 仅支持 browser 环境；screen 环境在 Phase 2 实现
+      const computerEnv = new BrowserEnvironment({
+        screenWidth: config.computerUse.screenWidth ?? 1440,
+        screenHeight: config.computerUse.screenHeight ?? 900,
+        headless: config.computerUse.headless,
+        initialUrl: config.computerUse.initialUrl,
+        searchEngineUrl: config.computerUse.searchEngineUrl,
+        highlightMouse: config.computerUse.highlightMouse,
+      });
+      await computerEnv.initialize();
+      tools.registerAll(createComputerUseTools(computerEnv, config.computerUse.excludedFunctions));
+    } catch (err) {
+      console.error('[Iris] Computer Use 初始化失败:');
+      console.error(err);
+      console.error('[Iris] 已跳过 Computer Use，其余功能正常启动。');
+    }
+  }
+
   // ---- 3.5 注册子代理工具 ----
   const subAgentTypes = new SubAgentTypeRegistry();
   const MEMORY_TOOLS = new Set(['memory_search', 'memory_add', 'memory_delete']);
@@ -143,6 +165,7 @@ export async function bootstrap(): Promise<BootstrapResult> {
     defaultMode,
     currentLLMConfig: router.getCurrentConfig(),
     ocrService,
+    maxRecentScreenshots: config.computerUse?.maxRecentScreenshots,
   }, memory, modeRegistry);
 
   // 注册子代理工具（需要 backend 引用）

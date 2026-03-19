@@ -136,6 +136,7 @@ npm run cli -- -p "分析这个项目"
 | [logger.md](./logger.md) | 日志模块 |
 | [config.md](./config.md) | 配置模块 |
 | [deploy.md](./deploy.md) | 部署指南 |
+| [computer-use.md](./computer-use.md) | Computer Use（浏览器操控） |
 
 ## 自我升级指南（供 AI 阅读）
 

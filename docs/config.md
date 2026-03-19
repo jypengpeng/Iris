@@ -26,6 +26,7 @@ Iris 实际读取的是 `data/configs/`，不是单文件 `config.yaml`。
 | `mcp.yaml` | 否 | MCP 服务器配置 |
 | `modes.yaml` | 否 | 自定义模式配置 |
 | `sub_agents.yaml` | 否 | 子代理类型与调度配置 |
+| `computer_use.yaml` | 否 | Computer Use 配置（浏览器操控） |
 
 首次使用建议：
 

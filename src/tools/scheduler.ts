@@ -1,6 +1,7 @@
 /**
  * 工具执行调度器
  *
+ * @module
  * 负责将 LLM 输出的一组工具调用分批并执行。
  *
  * 调度策略：
@@ -15,7 +16,7 @@
 
 import { ToolRegistry } from './registry';
 import { ToolStateManager } from './state';
-import { FunctionCallPart, FunctionResponsePart } from '../types';
+import { FunctionCallPart, FunctionResponsePart, InlineDataPart } from '../types';
 import { createLogger } from '../logger';
 import { ToolPolicyConfig, ToolsConfig } from '../config';
 
@@ -282,14 +283,34 @@ async function executeSingle(
       call.functionCall.name,
       call.functionCall.args as Record<string, unknown>,
     );
+
+    // 工具可通过约定字段 __response / __parts 返回带多模态内联数据的结果。
+    // 适用于需要在工具结果中附带截图、音频等二进制数据的场景。
+    //   __response → functionResponse.response（扁平，不包在 { result } 里）
+    //   __parts    → functionResponse.parts（InlineDataPart 数组）
+    const isRichResult = result != null && typeof result === 'object'
+      && !Array.isArray(result) && '__response' in (result as any);
+
+    let response: Record<string, unknown>;
+    let responseParts: InlineDataPart[] | undefined;
+
+    if (isRichResult) {
+      const rich = result as Record<string, unknown>;
+      response = (rich.__response as Record<string, unknown>) ?? {};
+      responseParts = Array.isArray(rich.__parts) ? rich.__parts as any : undefined;
+    } else {
+      response = { result } as Record<string, unknown>;
+    }
+
     if (toolState && invocationId) {
-      toolState.transition(invocationId, 'success', { result });
+      toolState.transition(invocationId, 'success', { result: response });
     }
     return {
       functionResponse: {
         name: call.functionCall.name,
         callId: call.functionCall.callId,
-        response: { result } as Record<string, unknown>,
+        response,
+        ...(responseParts ? { parts: responseParts } : {}),
       },
     };
   } catch (err: unknown) {

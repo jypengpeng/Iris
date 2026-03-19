@@ -157,6 +157,39 @@ export interface MCPConfig {
   servers: Record<string, MCPServerConfig>;
 }
 
+export interface ComputerUseConfig {
+  /** 是否启用 Computer Use，默认 false */
+  enabled: boolean;
+  /** 执行环境: browser | screen */
+  environment: 'browser' | 'screen';
+  /** 屏幕/浏览器视口宽度（像素），推荐 1440 */
+  screenWidth?: number;
+  /** 屏幕/浏览器视口高度（像素），推荐 900 */
+  screenHeight?: number;
+  /** 排除的预定义函数名列表 */
+  excludedFunctions?: string[];
+  /** 操作后等待 UI 更新的延迟（毫秒），默认由环境实现自行控制 */
+  postActionDelay?: number;
+  /** 截图格式，默认 'png' */
+  screenshotFormat?: 'png' | 'jpeg';
+  /** JPEG 质量（1-100），仅 jpeg 格式时有效 */
+  screenshotQuality?: number;
+  /** 浏览器环境：是否无头模式，默认 false */
+  headless?: boolean;
+  /** 浏览器环境：初始 URL */
+  initialUrl?: string;
+  /** 浏览器环境：搜索引擎 URL */
+  searchEngineUrl?: string;
+  /** 浏览器环境：是否高亮鼠标位置 */
+  highlightMouse?: boolean;
+  /**
+   * 发送给 LLM 时保留截图的最近轮次数。
+   * 超出此数量的旧轮次中，Computer Use 工具结果的截图会被剥离以节省 token。
+   * 默认 3，与 Gemini 官方示例一致。设为 0 表示不保留任何截图，设为 Infinity 表示全部保留。
+   */
+  maxRecentScreenshots?: number;
+}
+
 export interface AppConfig {
   llm: LLMRegistryConfig;
   ocr?: OCRConfig;
@@ -170,6 +203,8 @@ export interface AppConfig {
   modes?: import('../modes/types').ModeDefinition[];
   /** 子代理配置（可选，对应 sub-agents.yaml） */
   subAgents?: SubAgentsConfig;
+  /** Computer Use 配置（可选，对应 computer_use.yaml） */
+  computerUse?: ComputerUseConfig;
 }
 
 /** 子代理类型定义（配置文件格式） */

@@ -151,7 +151,44 @@ shell:
 sub_agent:
   autoApprove: false
 
-# 如需启用其他工具，请按工具名补充配置。
+# ─────────────────────────────────────────────────────────────
+# Computer Use 工具配置（需在 computer_use.yaml 中启用）
+# ─────────────────────────────────────────────────────────────
+#
+# 以下工具在 computer_use.yaml 的 enabled: true 时自动注册。
+# 所有坐标参数均为 0-999 归一化值，由工具内部转换为实际像素。
+#
+# 只读 / 低风险操作：建议自动批准
+# open_web_browser:
+#   autoApprove: true
+# click_at:
+#   autoApprove: true
+# hover_at:
+#   autoApprove: true
+# scroll_document:
+#   autoApprove: true
+# scroll_at:
+#   autoApprove: true
+# go_back:
+#   autoApprove: true
+# go_forward:
+#   autoApprove: true
+# search:
+#   autoApprove: true
+# navigate:
+#   autoApprove: true
+# wait_5_seconds:
+#   autoApprove: true
+#
+# 输入类操作：按需决定是否自动批准
+# type_text_at:
+#   autoApprove: true
+# key_combination:
+#   autoApprove: false          # 按键组合可能触发系统级操作，建议手动确认
+# drag_and_drop:
+#   autoApprove: false
+
+# 如需启用其他工具（记忆、MCP 等），请按工具名补充配置。
 # 例如：
 # memory_search:
 #   autoApprove: true

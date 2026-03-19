@@ -46,6 +46,8 @@ export interface FunctionResponsePart {
     response: Record<string, unknown>;
     /** 对应的 provider 原生工具调用 ID，需与上一轮 functionCall.callId 对齐 */
     callId?: string;
+    /** 工具结果附带的多模态内联数据（截图、音频等），对齐 Gemini FunctionResponse.parts */
+    parts?: InlineDataPart[];
   };
 }
 

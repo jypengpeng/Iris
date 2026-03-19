@@ -73,7 +73,7 @@ async function main() {
         console.error(
           '[Iris] 当前配置包含 console 平台，但未找到 Bun 运行时。\n'
           + '  - 请先安装 Bun：https://bun.sh/\n'
-          + '  - 安装后可直接使用：npm run dev\n'
+          + '  - 安装后可直接使用：bun run dev\n'
           + '  - 或改用其他平台（如 web）',
         )
         process.exit(1)

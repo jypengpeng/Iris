@@ -4,7 +4,7 @@
  * ## 设计说明
  *
  * 所有输出均为纯文本（不使用 HTML parse_mode）。
- * 原因：AI 回复内容本身包含 Markdown 语法（���码块、标题等），
+ * 原因：AI 回复内容本身包含 Markdown 语法（代码块、标题等），
  * 如果用 HTML parse_mode，需要对所有 <、>、& 做转义，
  * 而且 Telegram 的 HTML 子集不支持完整 Markdown，
  * 两者混用极易导致格式解析失败。纯文本模式最稳健。

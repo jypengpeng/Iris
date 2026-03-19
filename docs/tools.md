@@ -91,6 +91,7 @@ type ToolHandler = (args: Record<string, unknown>) => Promise<unknown>;
 | `memory_delete` | 同上 | 删除记忆 |
 | `sub_agent` | `sub-agent/index.ts`（工厂函数动态创建） | 委派子任务给独立子代理 |
 | `mcp__*` | 由 `MCPManager` 动态创建 | MCP 外部服务器提供的工具 |
+| `click_at` / `type_text_at` / ... | 由 `computer-use/tools.ts` 动态创建 | Computer Use 浏览器操控工具（共 13 个），详见 [computer-use.md](./computer-use.md) |
 
 ## sub_agent 工具
 
@@ -143,3 +144,16 @@ function resolveProjectPath(inputPath: string): string;
 - `handler` 必须是 async 函数
 - `handler` 抛出的错误会被 ToolLoop 捕获，转为错误消息回传给 LLM
 - 工具的返回值会被包装为 `{ result: 返回值 }` 放入 functionResponse.response
+- 如需在工具结果中附带多模态数据（截图、音频等），handler 可返回约定格式：
+
+```typescript
+return {
+  __response: { url: "https://..." },                       // → functionResponse.response
+  __parts: [{ inlineData: { mimeType: "image/png", data: "<base64>" } }],  // → functionResponse.parts
+};
+```
+
+`scheduler.ts` 会识别 `__response` / `__parts` 字段并拆分到 `functionResponse` 中。
+`__parts` 的类型为 `InlineDataPart[]`，`mimeType` 为 `string`，支持任意 MIME 类型。
+
+详见 [computer-use.md](./computer-use.md) 中的截图回传机制说明。

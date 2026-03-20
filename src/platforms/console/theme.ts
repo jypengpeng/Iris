@@ -52,7 +52,7 @@ export const C = {
   /** 指令面板背景 */
   panelBg: '#1e2228',
   /** 思考区域背景 */
-  thinkingBg: '#1a1e24',
+  thinkingBg: '#1a2228',
   /** 命令/Shell 输出色（青） */
   command: '#00cec9',
 } as const;

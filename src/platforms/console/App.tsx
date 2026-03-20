@@ -6,7 +6,7 @@
  * 全屏布局：Logo + scrollbox 消息区 + 状态栏 + 输入栏。
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react';
 import { UsageMetadata } from '../../types';
 import type { LLMModelInfo } from '../../llm/router';
@@ -239,6 +239,13 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
         uncommittedStreamPartsRef.current = [];
         streamPartsRef.current = [];
         setStreamingParts([]);
+        // 预创建 assistant 消息占位，使流式内容始终在 map 同一 key 下渲染，
+        // 避免 finalizeAssistantParts 时组件从 fallback 迁移到 map 触发卸载重建闪烁。
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last?.role === 'assistant') return prev; // tool 循环中已有 assistant
+          return [...prev, { id: nextMsgId(), role: 'assistant', parts: [] }];
+        });
       },
       pushStreamParts(parts) {
         for (const part of parts) appendMergedMessagePart(streamPartsRef.current, { ...part } as MessagePart);
@@ -251,18 +258,17 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
       },
       endStream() {
         if (throttleTimerRef.current) { clearTimeout(throttleTimerRef.current); throttleTimerRef.current = null; }
-        setIsStreaming(false);
-        // 不立即提交到 messages，暂存等待 finalizeAssistantParts 用最终内容提交
+        // 不在此处设置 isStreaming=false，延迟到 finalizeAssistantParts 一起更新，
+        // 避免 <markdown> 的 streaming prop 在独立渲染帧中翻转导致全量重解析闪烁。
         uncommittedStreamPartsRef.current = [...streamPartsRef.current];
         streamPartsRef.current = [];
-        // 保持 streamingParts 可见，避免内容闪烁消失
         setStreamingParts([...uncommittedStreamPartsRef.current]);
       },
       finalizeAssistantParts(parts, meta?) {
         const normalizedParts = mergeMessageParts(parts);
-        // 丢弃流式暂存，使用最终完整内容
         uncommittedStreamPartsRef.current = [];
         setStreamingParts([]);
+        setIsStreaming(false);
         setMessages((prev) => {
           if (normalizedParts.length === 0 && !meta) return prev;
           const last = prev[prev.length - 1];
@@ -297,7 +303,8 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
       },
       setGenerating(generating) {
         if (!generating) {
-          // 兜底：若 finalizeAssistantParts 未触发（如异常中断），将暂存的流式内容提交到 messages
+          // 兜底：若 finalizeAssistantParts 未触发（如异常中断），
+          // 将暂存的流式内容提交到 messages，清理空占位消息，并确保 isStreaming 被重置
           const uncommitted = uncommittedStreamPartsRef.current;
           if (uncommitted.length > 0) {
             setMessages((prev) => appendAssistantParts(prev, uncommitted));
@@ -305,6 +312,14 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
           }
           setStreamingParts([]);
           streamPartsRef.current = [];
+          setIsStreaming(false);
+          // 清理 startStream 预创建的空占位消息（如 LLM 调用失败未产生内容）
+          setMessages(prev => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1];
+            if (last.role === 'assistant' && last.parts.length === 0) return prev.slice(0, -1);
+            return prev;
+          });
         }
         setIsGenerating(generating);
         setRetryInfo(null);
@@ -514,8 +529,7 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
   // ============ 消息逻辑 ============
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
   const lastIsActiveAssistant = isGenerating && lastMsg?.role === 'assistant';
-  const activeMessage = lastIsActiveAssistant ? lastMsg : null;
-  const displayMessages = useMemo(() => lastIsActiveAssistant ? messages.slice(0, -1) : messages, [messages, lastIsActiveAssistant]);
+  // 不再拆离 activeMessage，始终在 map 中渲染，避免 isGenerating 翻转时组件卸载重建导致闪烁
 
   // ============ 状态栏 ============
   const modeNameCapitalized = (modeName ?? 'normal').charAt(0).toUpperCase() + (modeName ?? 'normal').slice(1);
@@ -602,7 +616,7 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
 
   // ============ 对话视图 ============
 
-  const hasMessages = displayMessages.length > 0 || activeMessage || isGenerating;
+  const hasMessages = messages.length > 0 || isGenerating;
 
   return (
     <box flexDirection="column" width="100%" height="100%">
@@ -627,24 +641,30 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
 
       {/* 消息区域 — 有消息时显示 */}
       {hasMessages && <scrollbox flexGrow={1} stickyScroll stickyStart="bottom">
-        {displayMessages.map((msg) => (
-          <box key={msg.id} flexDirection="column" paddingBottom={1}>
-            <MessageItem msg={msg} modelName={currentModelName} />
-          </box>
-        ))}
-        {activeMessage && (
+        {messages.map((msg, i) => {
+          const isLastActive = lastIsActiveAssistant && i === messages.length - 1;
+          const liveParts = isLastActive && streamingParts.length > 0 ? streamingParts : undefined;
+          const hasVisibleContent = msg.parts.length > 0 || !!liveParts;
+          // 预创建的空占位消息：只渲染 GeneratingTimer，不渲染 MessageItem 标题头，
+          // 确保与 fallback 区的 GeneratingTimer 视觉一致，避免出现两个 spinner。
+          if (isLastActive && !hasVisibleContent) {
+            return (
+              <box key={msg.id} flexDirection="column" paddingBottom={1}>
+                <GeneratingTimer isGenerating={isGenerating} retryInfo={retryInfo} />
+              </box>
+            );
+          }
+          return (
+            <box key={msg.id} flexDirection="column" paddingBottom={1}>
+              <MessageItem msg={msg} liveParts={liveParts} isStreaming={isLastActive ? isStreaming : undefined} modelName={currentModelName} />
+              {isLastActive && isStreaming && streamingParts.length === 0 && <GeneratingTimer isGenerating={isGenerating} retryInfo={retryInfo} />}
+            </box>
+          );
+        })}
+        {/* setGenerating(true) 到 startStream() 之间的间隙：尚无 assistant 消息 */}
+        {isGenerating && !lastIsActiveAssistant && streamingParts.length === 0 && (
           <box flexDirection="column" paddingBottom={1}>
-            <MessageItem msg={activeMessage} liveParts={streamingParts.length > 0 ? streamingParts : undefined} isStreaming={isStreaming} modelName={currentModelName} />
-            {isStreaming && streamingParts.length === 0 && <GeneratingTimer isGenerating={isGenerating} retryInfo={retryInfo} />}
-          </box>
-        )}
-        {isGenerating && !activeMessage && (
-          <box flexDirection="column" paddingBottom={1}>
-            {streamingParts.length > 0 ? (
-              <MessageItem msg={{ id: 'tmp', role: 'assistant', parts: [] }} liveParts={streamingParts} isStreaming={isStreaming} modelName={currentModelName} />
-            ) : (
-              <GeneratingTimer isGenerating={isGenerating} retryInfo={retryInfo} />
-            )}
+            <GeneratingTimer isGenerating={isGenerating} retryInfo={retryInfo} />
           </box>
         )}
       </scrollbox>}

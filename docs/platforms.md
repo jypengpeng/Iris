@@ -28,6 +28,7 @@ src/platforms/
 ├── console/             # 控制台 TUI（OpenTUI / React）
 ├── lark/                # 飞书机器人（WebSocket 长连接）
 ├── wxwork/              # 企业微信智能机器人
+├── qq/                  # QQ 个人账号（NapCat / OneBot v11）
 ├── discord/             # Discord Bot
 ├── telegram/            # Telegram Bot
 └── web/                 # Web GUI（HTTP + SSE + Vue）
@@ -126,6 +127,56 @@ documents: Array<{ fileName: string; mimeType: string; data: string }>
 在 `data/configs/platform.yaml` 中设置 `type: wxwork`（或加入多平台数组），并填写 `wxwork.botId` 和 `wxwork.secret`。
 
 在企业微信管理后台 → 应用管理 → 智能机器人 中创建并获取 Bot ID 和 Secret。
+
+### QQ（NapCat / OneBot v11）
+
+基于 OneBot v11 协议，通过 NapCat 框架连接个人 QQ 账号。使用正向 WebSocket 长连接模式。
+
+| 项目 | 说明 |
+|------|------|
+| 构造参数 | `(backend, { wsUrl, accessToken?, selfId, groupMode?, showToolStatus? })` |
+| sessionId | 私聊：`qq-dm-{userId}`；群聊：`qq-group-{groupId}` |
+| 流式支持 | 不支持（QQ 不支持消息编辑），兼容流式 Backend 模式（累积后一次性发送） |
+| 工具状态 | 通过独立消息通知执行中的工具（可配置关闭） |
+| 并发控制 | 每个 chatKey 同一时间只处理一条消息（busy 锁） |
+| 消息缓冲 | AI 输出期间用户新消息暂存到缓冲区，完成后自动合并发送 |
+| 工具审批 | 自动批准所有工具调用（QQ 无交互审批 UI） |
+| 图片输入 | 支持图片消息解析，HTTP 下载后传入 Backend |
+| 群聊触发 | 可配置：`at`（默认，需 @机器人）/ `all`（响应所有消息）/ `off`（不响应群聊） |
+| 重连机制 | 断线后 5 秒间隔自动重连，最多 100 次 |
+
+#### QQ Slash 指令
+
+| 指令 | 说明 |
+|------|------|
+| `/new` | 新建对话（清空上下文） |
+| `/clear` | 清空当前对话历史 |
+| `/model` | 查看或切换模型 |
+| `/session` | 查看或切换历史会话 |
+| `/stop` | 中止当前 AI 回复 |
+| `/flush` | 中止当前回复并立即处理缓冲消息 |
+| `/help` | 显示帮助 |
+
+#### 配置
+
+在 `data/configs/platform.yaml` 中设置 `type: qq`（或加入多平台数组），并填写 QQ 相关配置：
+
+```yaml
+type: qq
+
+qq:
+  wsUrl: "ws://127.0.0.1:3001"     # NapCat OneBot v11 正向 WebSocket 地址
+  selfId: "123456789"               # 机器人自身 QQ 号
+  # accessToken: "your-token"       # NapCat 鉴权 token（可选）
+  # groupMode: at                   # 群聊触发模式：at / all / off
+  # showToolStatus: true            # 是否展示工具执行状态
+```
+
+#### 前置条件
+
+1. 部署 [NapCat](https://github.com/NapNeko/NapCatQQ) 并登录 QQ 账号
+2. 在 NapCat 中创建正向 WebSocket 服务端，消息格式选择 **array（数组格式）**
+3. 设置 Token（13 位以上），并将相同的值填入 Iris 配置的 `accessToken`
 
 ### Discord
 

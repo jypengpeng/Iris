@@ -50,5 +50,5 @@ iris onboard
 2. **选择 LLM 提供商** — Gemini / OpenAI / Claude
 3. **输入 API Key** — 带遮罩的密码输入
 4. **模型配置** — 模型别名、模型 ID、Base URL（提供默认值）
-5. **选择平台** — Console (TUI) / Web (HTTP+GUI)
+5. **选择平台** — Console (TUI) / Web (HTTP+GUI) / Telegram / 企业微信 / 飞书 / QQ (NapCat)
 6. **确认写入** — 预览配置并写入 `data/configs/*.yaml`

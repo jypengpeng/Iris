@@ -44,6 +44,10 @@ export function Summary({ config, skippedSteps, onConfirm, onBack }: SummaryProp
     ? config.larkAppSecret.slice(0, 4) + "••••" + config.larkAppSecret.slice(-4)
     : config.larkAppSecret.length > 0 ? "••••••••" : ""
 
+  const maskedQQWsUrl = config.qqWsUrl.length > 0
+    ? config.qqWsUrl
+    : ""
+
   const hasSkippedSteps = Object.values(skippedSteps).some(Boolean)
 
   const renderSkipSuffix = (skipped: boolean, message = "已跳过") => (
@@ -71,6 +75,8 @@ export function Summary({ config, skippedSteps, onConfirm, onBack }: SummaryProp
         return "Telegram Bot"
       case "lark":
         return "飞书 (Lark)"
+      case "qq":
+        return "QQ (NapCat)"
       default:
         return "Console (TUI)"
     }
@@ -144,6 +150,18 @@ export function Summary({ config, skippedSteps, onConfirm, onBack }: SummaryProp
             <text>
               <span fg="#636e72">{"Secret:   "}</span>
               {config.larkAppSecret.trim().length > 0 ? <span fg="#dfe6e9">{maskedLarkSecret}</span> : renderValue("", { skipped: skippedSteps.platform, emptyText: "已跳过，待手动填写" })}
+            </text>
+          </box>
+        )}
+        {config.platform === "qq" && (
+          <box flexDirection="column">
+            <text>
+              <span fg="#636e72">{"WS URL:   "}</span>
+              {renderValue(maskedQQWsUrl, { skipped: skippedSteps.platform, emptyText: "已跳过，待手动填写" })}
+            </text>
+            <text>
+              <span fg="#636e72">{"QQ 号:    "}</span>
+              {renderValue(config.qqSelfId, { skipped: skippedSteps.platform, emptyText: "已跳过，待手动填写" })}
             </text>
           </box>
         )}

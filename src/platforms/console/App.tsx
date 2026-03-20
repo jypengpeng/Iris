@@ -121,6 +121,7 @@ interface AppProps {
   onSwitchModel: (modelName: string) => SwitchModelResult;
   onLoadSettings: () => Promise<ConsoleSettingsSnapshot>;
   onSaveSettings: (snapshot: ConsoleSettingsSnapshot) => Promise<ConsoleSettingsSaveResult>;
+  onResetConfig: () => { success: boolean; message: string };
   onExit: () => void;
   modeName?: string;
   modelId: string;
@@ -129,7 +130,7 @@ interface AppProps {
 }
 
 type ViewMode = 'chat' | 'session-list' | 'model-list' | 'settings';
-export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToolApproval, onToolApply, onAbort, onNewSession, onLoadSession, onListSessions, onRunCommand, onListModels, onSwitchModel, onLoadSettings, onSaveSettings, onExit, modeName, modelId, modelName, contextWindow }: AppProps) {
+export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToolApproval, onToolApply, onAbort, onNewSession, onLoadSession, onListSessions, onRunCommand, onListModels, onSwitchModel, onLoadSettings, onSaveSettings, onResetConfig, onExit, modeName, modelId, modelName, contextWindow }: AppProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingParts, setStreamingParts] = useState<MessagePart[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -147,6 +148,8 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
   const [copyMode, setCopyMode] = useState(false);
   const [retryInfo, setRetryInfo] = useState<RetryInfo | null>(null);
 
+  const [pendingConfirm, setPendingConfirm] = useState<{ message: string; action: () => void } | null>(null);
+  const [confirmChoice, setConfirmChoice] = useState<'confirm' | 'cancel'>('confirm');
 
   const { width: termWidth } = useTerminalDimensions();
   const renderer = useRenderer();
@@ -355,6 +358,17 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
       return;
     }
     if (text === '/load') { onListSessions().then(metas => { setSessionList(metas); setSelectedIndex(0); setViewMode('session-list'); }); return; }
+    if (text === '/reset-config') {
+      setPendingConfirm({
+        message: '确认重置所有配置为默认值？当前配置将被覆盖。',
+        action: () => {
+          const result = onResetConfig();
+          setMessages((prev) => [...prev.filter(m => !m.isCommand), { id: nextMsgId(), role: 'assistant' as const, parts: [{ type: 'text' as const, text: result.message + (result.success ? '\n重启应用后生效。' : '') }], isCommand: true, isError: !result.success }]);
+        },
+      });
+      setConfirmChoice('confirm');
+      return;
+    }
     if (text === '/settings' || text === '/mcp') { setSettingsInitialSection(text === '/mcp' ? 'mcp' : 'general'); setViewMode('settings'); return; }
     if (text.startsWith('/model')) {
       clearRedo(undoRedoRef.current); onClearRedoStack();
@@ -389,7 +403,7 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
     clearRedo(undoRedoRef.current);
     onClearRedoStack();
     onSubmit(text);
-  }, [onSubmit, onUndo, onRedo, onClearRedoStack, onNewSession, onListSessions, onRunCommand, onListModels, onSwitchModel, onExit]);
+  }, [onSubmit, onUndo, onRedo, onClearRedoStack, onNewSession, onListSessions, onRunCommand, onListModels, onSwitchModel, onResetConfig, onExit]);
 
   // ============ 键盘输入 ============
   useKeyboard((key) => {
@@ -454,6 +468,21 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
       // y / n 快捷键保留兼容
       if (key.name === 'y') { onToolApproval(pendingApprovals[0].id, true); setApprovalChoice('approve'); return; }
       if (key.name === 'n') { onToolApproval(pendingApprovals[0].id, false); setApprovalChoice('approve'); return; }
+      return;
+    }
+    // 确认框拦截（如 /reset-config 二次确认）
+    if (pendingConfirm) {
+      if (key.name === 'left' || key.name === 'up' || key.name === 'right' || key.name === 'down') {
+        setConfirmChoice((prev) => prev === 'confirm' ? 'cancel' : 'confirm');
+        return;
+      }
+      if (key.name === 'enter' || key.name === 'return') {
+        if (confirmChoice === 'confirm') pendingConfirm.action();
+        setPendingConfirm(null); setConfirmChoice('confirm');
+        return;
+      }
+      if (key.name === 'y') { pendingConfirm.action(); setPendingConfirm(null); setConfirmChoice('confirm'); return; }
+      if (key.name === 'n' || key.name === 'escape') { setPendingConfirm(null); setConfirmChoice('confirm'); return; }
       return;
     }
     if (viewMode === 'session-list') {
@@ -622,7 +651,20 @@ export function App({ onReady, onSubmit, onUndo, onRedo, onClearRedoStack, onToo
 
       {/* 底部输入区 */}
       <box flexDirection="column" flexShrink={0} paddingX={1} paddingBottom={1} paddingTop={hasMessages ? 1 : 0}>
-        {pendingApprovals.length > 0 ? (
+        {pendingConfirm ? (
+          <box flexDirection="column" borderStyle="single" borderColor={confirmChoice === 'confirm' ? C.warn : C.dim} paddingLeft={1} paddingRight={1} paddingY={0}>
+            <text>
+              <span fg={C.error}><strong>⚠ </strong></span>
+              <span fg={C.text}>{pendingConfirm.message}</span>
+            </text>
+            <text>
+              <span fg={C.dim}>  </span>
+              <span fg={confirmChoice === 'confirm' ? C.warn : C.textSec}>{confirmChoice === 'confirm' ? '[(Y)确认]' : ' (Y)确认 '}</span>
+              <span fg={C.dim}> </span>
+              <span fg={confirmChoice === 'cancel' ? C.accent : C.textSec}>{confirmChoice === 'cancel' ? '[(N)取消]' : ' (N)取消 '}</span>
+            </text>
+          </box>
+        ) : pendingApprovals.length > 0 ? (
           <box flexDirection="column" borderStyle="single" borderColor={approvalChoice === 'approve' ? C.accent : C.error} paddingLeft={1} paddingRight={1} paddingY={0}>
             <text>
               <span fg={C.warn}><strong>? </strong></span>

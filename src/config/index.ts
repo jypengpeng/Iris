@@ -97,3 +97,23 @@ export function loadConfig(): AppConfig {
     computerUse: parseComputerUseConfig(data.computer_use),
   };
 }
+
+
+/**
+ * 将配置目录重置为默认值。
+ * 从 data/configs.example/ 递归复制覆盖 ~/.iris/configs/ 中的所有文件。
+ */
+export function resetConfigToDefaults(): { success: boolean; message: string } {
+  const exampleDir = path.join(projectRoot, 'data/configs.example');
+  if (!fs.existsSync(exampleDir) || !fs.statSync(exampleDir).isDirectory()) {
+    return { success: false, message: '未找到默认配置模板目录。' };
+  }
+
+  // 确保目标目录存在
+  if (!fs.existsSync(globalConfigDir)) {
+    fs.mkdirSync(globalConfigDir, { recursive: true });
+  }
+
+  fs.cpSync(exampleDir, globalConfigDir, { recursive: true });
+  return { success: true, message: `配置已重置为默认值: ${globalConfigDir}` };
+}

@@ -17,6 +17,7 @@ export const COMMANDS: Command[] = [
   { name: '/settings', description: '打开设置中心（LLM / System / Tools / MCP）' },
   { name: '/mcp',      description: '直接打开 MCP 管理区' },
   { name: '/sh',       description: '执行命令（如 cd、dir、git 等）' },
+  { name: '/reset-config', description: '重置配置为默认值' },
   { name: '/exit',     description: '退出应用' },
 ];
 

@@ -36,6 +36,7 @@ import { resizeImage, formatDimensionNote } from '../media/image-resize.js';
 import { extractDocument, isSupportedDocumentMime } from '../media/document-extract.js';
 import { convertToPDF } from '../media/office-to-pdf.js';
 import type { DocumentInput } from '../media/document-extract.js';
+import { resetConfigToDefaults as doResetConfigToDefaults } from '../config/index';
 
 const logger = createLogger('Backend');
 const IMAGE_UNAVAILABLE_NOTICE = (count: number) => (
@@ -706,6 +707,11 @@ export class Backend extends EventEmitter {
     if ('ocrService' in opts) this.ocrService = opts.ocrService;
     if (opts.maxRecentScreenshots !== undefined) this.maxRecentScreenshots = opts.maxRecentScreenshots;
     logger.info(`配置已热重载: stream=${this.stream} maxToolRounds=${this.toolLoopConfig.maxRounds} toolPolicies=${Object.keys(this.toolLoopConfig.toolsConfig.permissions).length}`);
+  }
+
+  /** 重置配置文件为默认值（覆盖 ~/.iris/configs/） */
+  resetConfigToDefaults(): { success: boolean; message: string } {
+    return doResetConfigToDefaults();
   }
 
   // ============ 核心流程 ============

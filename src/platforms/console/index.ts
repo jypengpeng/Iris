@@ -267,6 +267,7 @@ export class ConsolePlatform extends PlatformAdapter {
         onSwitchModel: (modelName: string) => this.handleSwitchModel(modelName),
         onLoadSettings: () => this.handleLoadSettings(),
         onSaveSettings: (snapshot: ConsoleSettingsSnapshot) => this.handleSaveSettings(snapshot),
+        onResetConfig: () => this.handleResetConfig(),
         onExit: () => this.stop(),
         modeName: this.modeName,
         modelId: this.modelId,
@@ -346,6 +347,10 @@ export class ConsolePlatform extends PlatformAdapter {
 
   private async handleSaveSettings(snapshot: ConsoleSettingsSnapshot): Promise<ConsoleSettingsSaveResult> {
     return this.settingsController.saveSnapshot(snapshot);
+  }
+
+  private handleResetConfig(): { success: boolean; message: string } {
+    return this.backend.resetConfigToDefaults();
   }
 
   private async handleInput(text: string): Promise<void> {

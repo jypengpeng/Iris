@@ -21,7 +21,6 @@ import { SubAgentTypeRegistry, SubAgentTypeConfig } from './types';
 export type { SubAgentTypeConfig } from './types';
 export {
   SubAgentTypeRegistry,
-  createDefaultSubAgentTypes,
   buildSubAgentGuidance,
 } from './types';
 

@@ -30,7 +30,7 @@ import { deleteFile } from './tools/internal/delete_file';
 import { createDirectory } from './tools/internal/create_directory';
 import { insertCode } from './tools/internal/insert_code';
 import { deleteCode } from './tools/internal/delete_code';
-import { SubAgentTypeRegistry, createDefaultSubAgentTypes, buildSubAgentGuidance, createSubAgentTool } from './tools/internal/sub-agent';
+import { SubAgentTypeRegistry, buildSubAgentGuidance, createSubAgentTool } from './tools/internal/sub-agent';
 import { ModeRegistry, DEFAULT_MODE, DEFAULT_MODE_NAME } from './modes';
 import { PromptAssembler } from './prompt/assembler';
 import { DEFAULT_SYSTEM_PROMPT } from './prompt/templates/default';
@@ -140,15 +140,10 @@ export async function bootstrap(): Promise<BootstrapResult> {
   const subAgentTypes = new SubAgentTypeRegistry();
   const MEMORY_TOOLS = new Set(['memory_search', 'memory_add', 'memory_delete']);
 
-  if (config.subAgents?.types && config.subAgents.types.length > 0) {
+  if (config.subAgents?.types) {
     for (const t of config.subAgents.types) {
       if (!memory && t.allowedTools?.every(name => MEMORY_TOOLS.has(name))) continue;
       subAgentTypes.register({ ...t });
-    }
-  } else {
-    for (const t of createDefaultSubAgentTypes()) {
-      if (!memory && t.allowedTools?.every(name => MEMORY_TOOLS.has(name))) continue;
-      subAgentTypes.register(t);
     }
   }
 
@@ -168,8 +163,9 @@ export async function bootstrap(): Promise<BootstrapResult> {
   prompt.setSystemPrompt(config.system.systemPrompt || DEFAULT_SYSTEM_PROMPT);
 
   // ---- 5. 创建 Backend ----
-  const subAgentGuidance = buildSubAgentGuidance(subAgentTypes, !!memory);
-  const autoRecall = !(memory && tools.get('sub_agent'));
+  const hasSubAgents = subAgentTypes.getAll().length > 0;
+  const subAgentGuidance = hasSubAgents ? buildSubAgentGuidance(subAgentTypes, !!memory) : '';
+  const autoRecall = !(memory && hasSubAgents);
 
   const backend = new Backend(router, storage, tools, toolState, prompt, {
     maxToolRounds: config.system.maxToolRounds,
@@ -185,14 +181,16 @@ export async function bootstrap(): Promise<BootstrapResult> {
     maxRecentScreenshots: config.computerUse?.maxRecentScreenshots,
   }, memory, modeRegistry);
 
-  // 注册子代理工具（需要 backend 引用）
-  tools.register(createSubAgentTool({
-    getRouter: () => backend.getRouter(),
-    getToolPolicies: () => backend.getToolPolicies(),
-    tools,
-    subAgentTypes,
-    maxDepth: config.system.maxAgentDepth,
-  }));
+  // 注册子代理工具（需要 backend 引用；无类型定义时跳过）
+  if (hasSubAgents) {
+    tools.register(createSubAgentTool({
+      getRouter: () => backend.getRouter(),
+      getToolPolicies: () => backend.getToolPolicies(),
+      tools,
+      subAgentTypes,
+      maxDepth: config.system.maxAgentDepth,
+    }));
+  }
 
   return {
     backend,

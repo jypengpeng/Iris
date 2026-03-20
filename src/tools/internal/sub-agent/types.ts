@@ -50,36 +50,6 @@ export class SubAgentTypeRegistry {
   }
 }
 
-/** 创建内置默认子代理类型 */
-export function createDefaultSubAgentTypes(): SubAgentTypeConfig[] {
-  return [
-    {
-      name: 'general-purpose',
-      description: '执行需要多步工具操作的复杂子任务。适合承接相对独立的子任务。',
-      systemPrompt: '你是一个通用子代理，负责独立完成委派给你的子任务。请专注于完成任务并返回清晰的结果。',
-      excludedTools: ['sub_agent'],
-      parallel: false,
-      maxToolRounds: 200,
-    },
-    {
-      name: 'explore',
-      description: '只读搜索和阅读文件、执行查询命令。不做修改，只返回发现的信息。',
-      systemPrompt: '你是一个只读探索代理，负责搜索和阅读信息。不要修改任何文件，只返回你发现的内容。',
-      allowedTools: ['read_file', 'search_in_files', 'shell'],
-      parallel: false,
-      maxToolRounds: 200,
-    },
-    {
-      name: 'recall',
-      description: '从长期记忆中检索相关信息。当需要回忆用户偏好、历史事实或之前保存的内容时使用。',
-      systemPrompt: '你是一个记忆召回代理。根据给定的查询，从长期记忆中尽可能全面地检索相关信息。\n\n策略：\n1. 先用原始查询搜索\n2. 如果结果不够，提取关键词重新搜索\n3. 尝试相关概念或同义词搜索\n\n将所有找到的记忆整理为清晰的摘要返回。如果没有找到任何相关记忆，明确说明。',
-      allowedTools: ['memory_search'],
-      parallel: false,
-      maxToolRounds: 3,
-    },
-  ];
-}
-
 function formatTypeSuffix(type: SubAgentTypeConfig): string {
   const segments = [type.parallel ? '可并行调度' : '串行调度'];
   if (type.modelName) {
@@ -88,9 +58,15 @@ function formatTypeSuffix(type: SubAgentTypeConfig): string {
   return segments.join('，');
 }
 
-/** 根据注册的类型动态生成协调指导文本，注入系统提示词引导主 LLM 自然委派 */
+/**
+ * 根据注册的类型动态生成协调指导文本，注入系统提示词引导主 LLM 自然委派。
+ * 当注册表为空时返回空字符串（不生成任何指导文本）。
+ */
 export function buildSubAgentGuidance(registry: SubAgentTypeRegistry, hasMemory: boolean): string {
-  const typeList = registry.getAll()
+  const allTypes = registry.getAll();
+  if (allTypes.length === 0) return '';
+
+  const typeList = allTypes
     .map(t => `- **${t.name}**：${t.description}（${formatTypeSuffix(t)}）`)
     .join('\n');
 

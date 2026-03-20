@@ -285,8 +285,8 @@ export interface SubAgentTypeDef {
   parallel: boolean;
 }
 
-/** 子代理配置（对应 sub-agents.yaml） */
+/** 子代理配置（对应 sub_agents.yaml） */
 export interface SubAgentsConfig {
-  /** 自定义子代理类型定义列表（提供时完全替代内置默认） */
+  /** 子代理类型定义列表（来自配置文件，未配置时不启用子代理功能） */
   types?: SubAgentTypeDef[];
 }

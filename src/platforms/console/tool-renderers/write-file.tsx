@@ -61,15 +61,6 @@ function getLineCount(path: string | undefined, argsFiles: ArgsFileEntry[]): num
   return entry ? countLines(entry.content) : 0;
 }
 
-function renderLinesBadge(lines: number, action: string): React.ReactNode {
-  if (action === 'unchanged' || lines === 0) return null;
-  // created = 全新文件，绿色 +N；modified = 重写，显示总行数
-  if (action === 'created') {
-    return <span fg="#57ab5a"> +{lines}</span>;
-  }
-  return <span fg="#d2a8ff"> ~{lines}</span>;
-}
-
 export function WriteFileRenderer({ args, result }: ToolRendererProps) {
   const r = (result || {}) as WriteFileResult;
   const items = r.results || [];
@@ -80,18 +71,22 @@ export function WriteFileRenderer({ args, result }: ToolRendererProps) {
     return <text fg="#888"><em>{' \u21B3'} wrote 0 files</em></text>;
   }
 
-  // 单文件：显示 action + 行数 + 完整路径
+  // 单文件：显示 行数 + action + 完整路径
   if (items.length === 1) {
     const item = items[0];
     const action = item.action ?? (item.success ? 'written' : 'failed');
     const fg = item.success === false ? '#ff0000' : '#888';
     const lines = getLineCount(item.path, argsFiles);
+    const hasLines = lines > 0 && action !== 'unchanged';
     return (
       <text fg={fg}>
         <em>
-          {' \u21B3'} {action}
-          {renderLinesBadge(lines, action)}
-          <span fg={fg}> ({item.path ?? '?'})</span>
+          {' \u21B3 '}
+          {hasLines && (action === 'created'
+            ? <span fg="#57ab5a">+{lines}</span>
+            : <span fg="#d2a8ff">~{lines}</span>)}
+          {hasLines ? ' lines, ' : ''}
+          {action} ({item.path ?? '?'})
         </em>
       </text>
     );
@@ -120,9 +115,10 @@ export function WriteFileRenderer({ args, result }: ToolRendererProps) {
   return (
     <text fg={failCount > 0 ? '#ffff00' : '#888'}>
       <em>
-        {' \u21B3 '}{parts.join(', ')}
-        {totalLines > 0 && <span fg="#d2a8ff"> ~{totalLines}</span>}
-        <span fg={failCount > 0 ? '#ffff00' : '#888'}> ({names})</span>
+        {' \u21B3 '}
+        {totalLines > 0 && <span fg="#d2a8ff">~{totalLines}</span>}
+        {totalLines > 0 ? ' lines, ' : ''}
+        {parts.join(', ')} ({names})
       </em>
     </text>
   );

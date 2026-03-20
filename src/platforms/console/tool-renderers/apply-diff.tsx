@@ -44,13 +44,13 @@ export function ApplyDiffRenderer({ args, result }: ToolRendererProps) {
     <text fg={isError ? '#ffff00' : '#888'}>
       <em>
         {' \u21B3 '}
-        {r.applied}/{r.totalHunks} hunks applied
-        {isError ? `, ${r.failed} failed` : ''}
-        {hasStats && ' ('}
         {added > 0 && <span fg="#57ab5a">+{added}</span>}
         {added > 0 && deleted > 0 && ' '}
         {deleted > 0 && <span fg="#f47067">-{deleted}</span>}
-        {hasStats && ')'}
+        {hasStats && ', '}
+        {r.applied}/{r.totalHunks} hunks
+        {isError ? `, ${r.failed} failed` : ''}
+        {r.path ? ` (${r.path})` : ''}
       </em>
     </text>
   );

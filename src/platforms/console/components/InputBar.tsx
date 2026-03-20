@@ -172,6 +172,7 @@ export function InputBar({ disabled, onSubmit }: InputBarProps) {
       <text fg={disabled ? C.dim : C.accent}><strong>{'\u276F '} </strong></text><InputDisplay
         value={value}
         cursor={inputState.cursor}
+        availableWidth={availableWidth}
         isActive={!disabled}
         cursorVisible={cursorVisible}
         placeholder="输入消息…"

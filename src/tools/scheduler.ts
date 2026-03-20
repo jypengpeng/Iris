@@ -303,7 +303,8 @@ async function executeSingle(
     }
 
     if (toolState && invocationId) {
-      toolState.transition(invocationId, 'success', { result: response });
+      // 存储原始工具输出（非 API response 包裹），供 TUI 渲染器直接使用
+      toolState.transition(invocationId, 'success', { result });
     }
     return {
       functionResponse: {

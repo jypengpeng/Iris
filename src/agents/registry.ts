@@ -11,8 +11,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { parse as parseYAML } from 'yaml';
-import { dataDir, getAgentPaths, getDefaultPaths } from '../paths';
+import { parse as parseYAML, stringify as stringifyYAML } from 'yaml';
+import { dataDir, getAgentPaths, getDefaultPaths, projectRoot } from '../paths';
 import type { AgentPaths } from '../paths';
 import type { AgentDefinition, AgentManifest } from './types';
 
@@ -122,6 +122,98 @@ export function setAgentEnabled(enabled: boolean): { success: boolean; message: 
     };
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '操作失败' };
+  }
+}
+
+/** 初始化 agents.yaml（若不存在） */
+export function createManifestIfNotExists(): { success: boolean; message: string } {
+  if (fs.existsSync(AGENTS_MANIFEST_PATH)) {
+    return { success: true, message: 'agents.yaml 已存在。' };
+  }
+  try {
+    fs.writeFileSync(AGENTS_MANIFEST_PATH, stringifyYAML({ enabled: false, agents: {} }), 'utf-8');
+    _cachedManifest = undefined;
+    return { success: true, message: 'agents.yaml 已创建。' };
+  } catch (err) {
+    return { success: false, message: err instanceof Error ? err.message : '创建失败' };
+  }
+}
+
+/** 创建 Agent：写入 agents.yaml + 初始化配置目录 */
+export function createAgent(name: string, description?: string): { success: boolean; message: string } {
+  if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+    return { success: false, message: 'Agent 名称只能包含字母、数字、下划线和连字符。' };
+  }
+  try {
+    // 确保 manifest 存在
+    createManifestIfNotExists();
+    const raw = fs.readFileSync(AGENTS_MANIFEST_PATH, 'utf-8');
+    const manifest = parseYAML(raw) as AgentManifest ?? { enabled: false, agents: {} };
+    if (!manifest.agents) manifest.agents = {};
+
+    if (manifest.agents[name]) {
+      return { success: false, message: `Agent「${name}」已存在。` };
+    }
+
+    manifest.agents[name] = { description: description || undefined };
+    fs.writeFileSync(AGENTS_MANIFEST_PATH, stringifyYAML(manifest), 'utf-8');
+    _cachedManifest = undefined;
+
+    // 初始化配置目录（从 data/configs.example 复制模板）
+    const agentPaths = getAgentPaths(name);
+    if (!fs.existsSync(agentPaths.configDir)) {
+      const exampleDir = path.join(projectRoot, 'data/configs.example');
+      fs.mkdirSync(agentPaths.configDir, { recursive: true });
+      if (fs.existsSync(exampleDir)) {
+        fs.cpSync(exampleDir, agentPaths.configDir, { recursive: true });
+      }
+    }
+
+    return { success: true, message: `Agent「${name}」已创建。` };
+  } catch (err) {
+    return { success: false, message: err instanceof Error ? err.message : '创建失败' };
+  }
+}
+
+/** 更新 Agent 元信息 */
+export function updateAgent(name: string, fields: { description?: string; dataDir?: string }): { success: boolean; message: string } {
+  try {
+    if (!fs.existsSync(AGENTS_MANIFEST_PATH)) {
+      return { success: false, message: 'agents.yaml 不存在。' };
+    }
+    const raw = fs.readFileSync(AGENTS_MANIFEST_PATH, 'utf-8');
+    const manifest = parseYAML(raw) as AgentManifest;
+    if (!manifest?.agents?.[name]) {
+      return { success: false, message: `Agent「${name}」不存在。` };
+    }
+
+    if (fields.description !== undefined) manifest.agents[name].description = fields.description || undefined;
+    if (fields.dataDir !== undefined) manifest.agents[name].dataDir = fields.dataDir || undefined;
+    fs.writeFileSync(AGENTS_MANIFEST_PATH, stringifyYAML(manifest), 'utf-8');
+    _cachedManifest = undefined;
+    return { success: true, message: `Agent「${name}」已更新。` };
+  } catch (err) {
+    return { success: false, message: err instanceof Error ? err.message : '更新失败' };
+  }
+}
+
+/** 删除 Agent（仅从 agents.yaml 移除条目，不删除数据目录） */
+export function deleteAgent(name: string): { success: boolean; message: string } {
+  try {
+    if (!fs.existsSync(AGENTS_MANIFEST_PATH)) {
+      return { success: false, message: 'agents.yaml 不存在。' };
+    }
+    const raw = fs.readFileSync(AGENTS_MANIFEST_PATH, 'utf-8');
+    const manifest = parseYAML(raw) as AgentManifest;
+    if (!manifest?.agents?.[name]) {
+      return { success: false, message: `Agent「${name}」不存在。` };
+    }
+    delete manifest.agents[name];
+    fs.writeFileSync(AGENTS_MANIFEST_PATH, stringifyYAML(manifest), 'utf-8');
+    _cachedManifest = undefined;
+    return { success: true, message: `Agent「${name}」已从配置中移除。数据目录已保留。` };
+  } catch (err) {
+    return { success: false, message: err instanceof Error ? err.message : '删除失败' };
   }
 }
 

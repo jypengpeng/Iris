@@ -72,7 +72,7 @@ export function parseToolsConfig(raw: any): ToolsConfig {
   const globalConfig: Pick<ToolsConfig, 'autoApproveAll' | 'autoApproveConfirmation' | 'autoApproveDiff' | 'limits'> = {};
 
   // 保留字段名集合（全局开关，不作为工具名解析）
-  const RESERVED_KEYS = new Set(['autoApproveAll', 'autoApproveConfirmation', 'autoApproveDiff', 'limits']);
+  const RESERVED_KEYS = new Set(['autoApproveAll', 'autoApproveConfirmation', 'autoApproveDiff', 'limits', 'disabledTools']);
 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { permissions };
@@ -92,5 +92,9 @@ export function parseToolsConfig(raw: any): ToolsConfig {
     permissions[toolName] = policy;
   }
 
-  return { ...globalConfig, permissions };
+  const disabledTools = Array.isArray(raw.disabledTools)
+    ? raw.disabledTools.filter((s: unknown): s is string => typeof s === 'string' && s.trim().length > 0)
+    : undefined;
+
+  return { ...globalConfig, permissions, ...(disabledTools && disabledTools.length > 0 ? { disabledTools } : {}) };
 }

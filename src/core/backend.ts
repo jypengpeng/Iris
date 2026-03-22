@@ -628,9 +628,14 @@ export class Backend extends EventEmitter {
   }
 
 
-  /** 获取工具声明列表（供 Web API 等使用） */
+  /** 获取所有工具名称（含已禁用的，供 Web API 状态展示） */
   getToolNames(): string[] {
     return this.tools.getDeclarations().map(d => d.name);
+  }
+
+  /** 获取被禁用的工具名称列表 */
+  getDisabledTools(): string[] {
+    return this.toolLoopConfig.toolsConfig.disabledTools ?? [];
   }
 
   /** 获取工具注册表引用 */
@@ -855,11 +860,15 @@ export class Backend extends EventEmitter {
       return content;
     };
 
-    // 4. 解析模式工具过滤
-    const requestTools = mode?.tools ? applyToolFilter(mode, this.tools) : this.tools;
+    // 4. 解析模式工具过滤 + 全局禁用工具
+    let requestTools = mode?.tools ? applyToolFilter(mode, this.tools) : this.tools;
+    const disabled = this.toolLoopConfig.toolsConfig.disabledTools;
+    if (disabled && disabled.length > 0) {
+      requestTools = requestTools.createFiltered(disabled);
+    }
 
     let loop = this.toolLoop;
-    if (mode?.tools) {
+    if (mode?.tools || (disabled && disabled.length > 0)) {
       loop = new ToolLoop(requestTools, this.prompt, this.toolLoopConfig, this.toolState);
     }
     // 5. 新用户消息会让 redo 失效：从这里开始就是新的分叉。

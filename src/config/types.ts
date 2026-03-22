@@ -134,6 +134,8 @@ export interface ToolsConfig {
    * 未配置的工具视为不允许执行。
    */
   permissions: Record<string, ToolPolicyConfig>;
+  /** 被禁用的工具名称列表（不会发送给 LLM） */
+  disabledTools?: string[];
 }
 
 export interface SystemConfig {

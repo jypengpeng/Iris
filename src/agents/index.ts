@@ -9,4 +9,8 @@ export {
   resolveAgentPaths,
   getAgentStatus,
   setAgentEnabled,
+  createManifestIfNotExists,
+  createAgent,
+  updateAgent,
+  deleteAgent,
 } from './registry';

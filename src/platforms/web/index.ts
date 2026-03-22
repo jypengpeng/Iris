@@ -369,6 +369,49 @@ export class WebPlatform extends PlatformAdapter {
       sendJSON(res, result.success ? 200 : 500, result);
     });
 
+    // Agent CRUD API
+    this.router.post('/api/agents/init', async (_req, res) => {
+      const { createManifestIfNotExists } = await import('../../agents');
+      const result = createManifestIfNotExists();
+      sendJSON(res, result.success ? 200 : 500, result);
+    });
+
+    this.router.post('/api/agents/create', async (req, res) => {
+      const body = await readBody(req);
+      if (typeof body.name !== 'string' || !body.name.trim()) {
+        sendJSON(res, 400, { success: false, message: '缺少 name 参数' });
+        return;
+      }
+      const { createAgent } = await import('../../agents');
+      const result = createAgent(body.name.trim(), body.description);
+      sendJSON(res, result.success ? 200 : 400, result);
+    });
+
+    this.router.post('/api/agents/update', async (req, res) => {
+      const body = await readBody(req);
+      if (typeof body.name !== 'string' || !body.name.trim()) {
+        sendJSON(res, 400, { success: false, message: '缺少 name 参数' });
+        return;
+      }
+      const { updateAgent } = await import('../../agents');
+      const result = updateAgent(body.name.trim(), {
+        description: body.description,
+        dataDir: body.dataDir,
+      });
+      sendJSON(res, result.success ? 200 : 400, result);
+    });
+
+    this.router.post('/api/agents/delete', async (req, res) => {
+      const body = await readBody(req);
+      if (typeof body.name !== 'string' || !body.name.trim()) {
+        sendJSON(res, 400, { success: false, message: '缺少 name 参数' });
+        return;
+      }
+      const { deleteAgent } = await import('../../agents');
+      const result = deleteAgent(body.name.trim());
+      sendJSON(res, result.success ? 200 : 400, result);
+    });
+
     // 聊天 API
     this.router.post('/api/chat', createChatHandler(this));
     this.router.get('/api/chat/suggestions', async (req, res) => {
@@ -465,10 +508,12 @@ export class WebPlatform extends PlatformAdapter {
     this.router.get('/api/status', async (req, res) => {
       const agent = this.resolveAgent(req);
       const modelInfo = agent.backend.getCurrentModelInfo();
+      const disabledTools = agent.backend.getDisabledTools();
       sendJSON(res, 200, {
         provider: agent.config.provider,
         model: agent.config.modelId,
         tools: agent.backend.getToolNames(),
+        ...(disabledTools.length > 0 ? { disabledTools } : {}),
         stream: agent.config.streamEnabled,
         authProtected: !!this.config.authToken,
         managementProtected: !!this.config.managementToken,

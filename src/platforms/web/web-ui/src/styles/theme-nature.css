@@ -468,6 +468,12 @@
   color: #047857;
 }
 
+:root[data-theme="light"] .tool-tag.disabled {
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.2);
+  color: #dc2626;
+}
+
 :root[data-theme="light"] .deploy-badge.subtle,
 :root[data-theme="light"] .deploy-output-status.disabled {
   background: #f3f4f6;

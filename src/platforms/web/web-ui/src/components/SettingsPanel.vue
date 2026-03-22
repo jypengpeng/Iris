@@ -23,8 +23,14 @@
       </div>
 
       <div class="settings-body">
+        <!-- Agent 编辑提示条 -->
+        <div v-if="editingAgent" class="agent-editing-banner">
+          <span>正在编辑 Agent：<strong>{{ editingAgent }}</strong></span>
+          <button class="agent-back-btn" type="button" @click="switchEditingAgent(null)">← 返回主配置</button>
+        </div>
+
         <div class="settings-section-group">
-          <p class="section-group-intro">Iris 采用「主模型 + 子代理」协作模式：你在下方注册模型连接，然后为子代理绑定模型。主 AI 遇到复杂任务时会自动委派给对应子代理。</p>
+          <p class="section-group-intro">{{ editingAgent ? `正在配置 Agent「${editingAgent}」的独立模型、工具和系统设置。` : 'Iris 采用「主模型 + 子代理」协作模式：你在下方注册模型连接，然后为子代理绑定模型。主 AI 遇到复杂任务时会自动委派给对应子代理。' }}</p>
 
         <section class="settings-section">
           <div class="settings-section-head">
@@ -53,7 +59,7 @@
 
           <div v-for="(entry, index) in modelEntries" :key="entry.uid" class="tier-block">
             <div class="tier-header" @click="entry.open = !entry.open">
-              <span class="tier-arrow" :class="{ open: entry.open }">▶</span>
+              <span class="tier-arrow" :class="{ open: entry.open }"></span>
               <span class="tier-label">{{ entry.modelName || `未命名模型 ${index + 1}` }}</span>
               <span class="tier-desc">{{ providerLabel(entry.provider) }} · {{ entry.modelId || '未填写模型 ID' }}</span>
               <span v-if="defaultModelName === entry.modelName && entry.modelName" class="settings-pill" style="margin-left:auto">默认</span>
@@ -122,16 +128,21 @@
                   <AppSelect v-model="entry.supportsVision" :options="visionOptions" />
                   <p class="field-hint">声明模型是否支持图片输入。「自动」时由提供商判断。</p>
                 </div>
-                <div class="form-group full-width">
-                  <label>自定义请求头</label>
-                  <textarea v-model="entry.headers" rows="2" placeholder='{"X-Custom": "value"}'></textarea>
-                  <p class="field-hint">JSON 格式，会覆盖提供商内置同名 header。</p>
-                </div>
-                <div class="form-group full-width">
-                  <label>自定义请求体</label>
-                  <textarea v-model="entry.requestBody" rows="2" placeholder='{"temperature": 0.7}'></textarea>
-                  <p class="field-hint">JSON 格式，会深合并到最终请求体，支持嵌套参数。</p>
-                </div>
+                <details class="advanced-section full-width">
+                  <summary>高级请求选项</summary>
+                  <div class="advanced-content">
+                    <div class="form-group full-width">
+                      <label>自定义请求头</label>
+                      <textarea v-model="entry.headers" rows="2" placeholder='{"X-Custom": "value"}'></textarea>
+                      <p class="field-hint">附加到每次 API 请求的 HTTP 头，同名时覆盖默认值。</p>
+                    </div>
+                    <div class="form-group full-width">
+                      <label>自定义请求体</label>
+                      <textarea v-model="entry.requestBody" rows="2" placeholder='{"temperature": 0.7}'></textarea>
+                      <p class="field-hint">额外的请求参数，如 temperature、top_p 等，会合并到每次请求中。</p>
+                    </div>
+                  </div>
+                </details>
               </div>
             </div>
           </div>
@@ -150,7 +161,7 @@
 
           <div v-for="(entry, idx) in subAgentEntries" :key="entry.uid" class="tier-block">
             <div class="tier-header" @click="entry.open = !entry.open">
-              <span class="tier-arrow" :class="{ open: entry.open }">▶</span>
+              <span class="tier-arrow" :class="{ open: entry.open }"></span>
               <span class="tier-label">{{ entry.name || '未命名' }}</span>
               <span class="tier-desc">{{ entry.description || '无描述' }} · 模型: {{ entry.modelName || '跟随活动模型' }}</span>
               <button class="btn-mcp-remove" type="button" @click.stop="removeSubAgentEntry(idx)" title="删除子代理类型">
@@ -296,7 +307,7 @@
 
           <div v-for="(server, idx) in mcpServers" :key="idx" class="tier-block">
             <div class="tier-header" @click="server.open = !server.open">
-              <span class="tier-arrow" :class="{ open: server.open }">▶</span>
+              <span class="tier-arrow" :class="{ open: server.open }"></span>
               <span class="tier-label">{{ server.name || '未命名' }}</span>
               <span class="tier-desc">{{ transportLabel(server.transport) }}</span>
               <label class="toggle-switch tier-toggle" @click.stop>
@@ -383,7 +394,7 @@
 
           <div v-for="(entry, idx) in modeEntries" :key="entry.uid" class="tier-block">
             <div class="tier-header" @click="entry.open = !entry.open">
-              <span class="tier-arrow" :class="{ open: entry.open }">▶</span>
+              <span class="tier-arrow" :class="{ open: entry.open }"></span>
               <span class="tier-label">{{ entry.name || '未命名' }}</span>
               <span class="tier-desc">{{ entry.description || '无描述' }}</span>
               <button class="btn-mcp-remove" type="button" @click.stop="removeModeEntry(idx)" title="删除模式">
@@ -432,7 +443,7 @@
 
           <div v-for="(entry, idx) in pluginEntries" :key="entry.uid" class="tier-block">
             <div class="tier-header" @click="entry.open = !entry.open">
-              <span class="tier-arrow" :class="{ open: entry.open }">▶</span>
+              <span class="tier-arrow" :class="{ open: entry.open }"></span>
               <span class="tier-label">{{ entry.name || '未命名' }}</span>
               <span class="tier-desc">{{ entry.type }}</span>
               <label class="toggle-switch" @click.stop>
@@ -585,7 +596,7 @@
             <!-- 环境工具策略 -->
             <div class="tier-block" style="margin-top:16px">
               <div class="tier-header" @click="cuToolPolicyOpen = !cuToolPolicyOpen">
-                <span class="tier-arrow" :class="{ open: cuToolPolicyOpen }">▶</span>
+                <span class="tier-arrow" :class="{ open: cuToolPolicyOpen }"></span>
                 <span class="tier-label">环境工具策略</span>
                 <span class="tier-desc">控制不同环境下可用的工具</span>
               </div>
@@ -633,7 +644,7 @@
           <!-- Web -->
           <div class="tier-block">
             <div class="tier-header" @click="platformOpen.web = !platformOpen.web">
-              <span class="tier-arrow" :class="{ open: platformOpen.web }">▶</span>
+              <span class="tier-arrow" :class="{ open: platformOpen.web }"></span>
               <span class="tier-label">Web</span>
               <span class="tier-desc">Web GUI 端口、鉴权</span>
             </div>
@@ -664,7 +675,7 @@
           <!-- Discord -->
           <div class="tier-block">
             <div class="tier-header" @click="platformOpen.discord = !platformOpen.discord">
-              <span class="tier-arrow" :class="{ open: platformOpen.discord }">▶</span>
+              <span class="tier-arrow" :class="{ open: platformOpen.discord }"></span>
               <span class="tier-label">Discord</span>
               <span class="tier-desc">Discord Bot</span>
             </div>
@@ -682,7 +693,7 @@
           <!-- Telegram -->
           <div class="tier-block">
             <div class="tier-header" @click="platformOpen.telegram = !platformOpen.telegram">
-              <span class="tier-arrow" :class="{ open: platformOpen.telegram }">▶</span>
+              <span class="tier-arrow" :class="{ open: platformOpen.telegram }"></span>
               <span class="tier-label">Telegram</span>
               <span class="tier-desc">Telegram Bot</span>
             </div>
@@ -720,7 +731,7 @@
           <!-- 企业微信 -->
           <div class="tier-block">
             <div class="tier-header" @click="platformOpen.wxwork = !platformOpen.wxwork">
-              <span class="tier-arrow" :class="{ open: platformOpen.wxwork }">▶</span>
+              <span class="tier-arrow" :class="{ open: platformOpen.wxwork }"></span>
               <span class="tier-label">企业微信</span>
               <span class="tier-desc">企业微信机器人</span>
             </div>
@@ -752,7 +763,7 @@
           <!-- 飞书 -->
           <div class="tier-block">
             <div class="tier-header" @click="platformOpen.lark = !platformOpen.lark">
-              <span class="tier-arrow" :class="{ open: platformOpen.lark }">▶</span>
+              <span class="tier-arrow" :class="{ open: platformOpen.lark }"></span>
               <span class="tier-label">飞书</span>
               <span class="tier-desc">飞书机器人</span>
             </div>
@@ -792,7 +803,7 @@
           <!-- QQ -->
           <div class="tier-block">
             <div class="tier-header" @click="platformOpen.qq = !platformOpen.qq">
-              <span class="tier-arrow" :class="{ open: platformOpen.qq }">▶</span>
+              <span class="tier-arrow" :class="{ open: platformOpen.qq }"></span>
               <span class="tier-label">QQ</span>
               <span class="tier-desc">QQ 机器人（OneBot）</span>
             </div>
@@ -835,29 +846,37 @@
           <div class="settings-section-head">
             <div>
               <h3>工具状态</h3>
-              <p>当前 AI 可使用的所有工具（含内置和 MCP 提供的）。此列表为只读。</p>
+              <p>当前 AI 可使用的所有工具（含内置和 MCP 提供的）。点击可切换启用/禁用。</p>
             </div>
-            <span class="settings-pill">{{ tools.length }} 个工具</span>
+            <span class="settings-pill">{{ tools.length - disabledTools.size }} / {{ tools.length }} 启用</span>
           </div>
 
           <div class="tools-list">
-            <span v-for="tool in tools" :key="tool" class="tool-tag">{{ tool }}</span>
+            <span
+              v-for="tool in tools"
+              :key="tool"
+              class="tool-tag"
+              :class="{ disabled: disabledTools.has(tool) }"
+              @click="toggleTool(tool)"
+            >{{ tool }}</span>
             <span v-if="tools.length === 0" class="text-muted">无已注册工具</span>
           </div>
         </section>
 
         <!-- 多 Agent 管理 -->
-        <section class="settings-section">
+        <section v-if="!editingAgent" class="settings-section">
           <div class="settings-section-head">
             <div>
               <h3>多 Agent 管理</h3>
               <p>配置和管理多个独立的 AI Agent，每个 Agent 拥有独立的模型、工具和会话。</p>
             </div>
+            <span v-if="agentStatus.agents.length > 0" class="settings-pill">{{ agentStatus.agents.length }} 个 Agent</span>
           </div>
 
           <div v-if="!agentStatus.exists" class="settings-agent-empty">
             <p>未找到 Agent 配置文件。</p>
-            <p class="text-muted">配置文件路径：<code>{{ agentStatus.manifestPath }}</code></p>
+            <p class="text-muted" style="margin-bottom:12px">配置文件路径：<code>{{ agentStatus.manifestPath }}</code></p>
+            <button class="btn-primary" type="button" @click="handleInitAgentManifest">初始化多 Agent 系统</button>
           </div>
 
           <template v-else>
@@ -873,7 +892,7 @@
             </div>
 
             <div v-if="agentStatus.agents.length > 0" class="settings-agent-list">
-              <div class="settings-agent-list-label">已定义的 Agent（{{ agentStatus.agents.length }}）</div>
+              <div class="settings-agent-list-label">已定义的 Agent</div>
               <div
                 v-for="agent in agentStatus.agents"
                 :key="agent.name"
@@ -886,16 +905,24 @@
                   <strong>{{ agent.name }}</strong>
                   <span v-if="agent.description" class="text-muted">{{ agent.description }}</span>
                 </div>
+                <div class="settings-agent-card-actions">
+                  <button class="btn-small" type="button" @click="switchEditingAgent(agent.name)">编辑配置</button>
+                  <button class="btn-small btn-danger" type="button" @click="handleDeleteAgent(agent.name)">删除</button>
+                </div>
               </div>
             </div>
 
             <div v-else class="settings-agent-empty">
-              <p class="text-muted">agents.yaml 中尚未定义任何 Agent。</p>
+              <p class="text-muted">尚未定义任何 Agent，点击下方按钮添加。</p>
             </div>
 
-            <p class="form-hint" style="margin-top:8px">
-              编辑 <code>{{ agentStatus.manifestPath }}</code> 以添加或修改 Agent 定义。
-            </p>
+            <!-- 添加 Agent -->
+            <div class="agent-add-form">
+              <input v-model="newAgentName" type="text" placeholder="Agent 名称（英文、数字、下划线）" class="agent-add-input" />
+              <input v-model="newAgentDesc" type="text" placeholder="描述（可选）" class="agent-add-input" />
+              <button class="btn-primary" type="button" :disabled="!newAgentName.trim()" @click="handleCreateAgent">添加 Agent</button>
+            </div>
+            <p class="field-hint">添加后可点击「编辑配置」为 Agent 设置独立的模型、工具、系统提示等。</p>
           </template>
         </section>
 
@@ -1078,10 +1105,10 @@ import { ICONS } from '../constants/icons'
 import { useSettingsPanel } from '../features/settings/useSettingsPanel'
 
 const llmProviderOptions = [
-  { value: 'gemini', label: 'Gemini', description: 'Google 原生模型接口' },
-  { value: 'openai-compatible', label: 'OpenAI 兼容', description: '兼容多数 OpenAI 风格网关' },
-  { value: 'openai-responses', label: 'OpenAI Responses', description: '面向 Responses API 的兼容实现' },
-  { value: 'claude', label: 'Claude', description: 'Anthropic 官方接口' },
+  { value: 'gemini', label: 'Gemini', description: 'Google AI Studio / Vertex AI' },
+  { value: 'openai-compatible', label: 'OpenAI 兼容', description: '任何兼容 OpenAI Chat Completions 的 API' },
+  { value: 'openai-responses', label: 'OpenAI Responses', description: 'OpenAI Responses API 格式' },
+  { value: 'claude', label: 'Claude', description: 'Anthropic 官方 API' },
 ]
 
 const mcpTransportOptions = [
@@ -1222,6 +1249,8 @@ const {
   modelCatalogHint,
   modelKeyHint,
   tools,
+  disabledTools,
+  toggleTool,
   statusText,
   statusError,
   saving,
@@ -1267,6 +1296,13 @@ const {
   resetPending,
   agentStatus,
   handleToggleAgent,
+  editingAgent,
+  switchEditingAgent,
+  handleInitAgentManifest,
+  newAgentName,
+  newAgentDesc,
+  handleCreateAgent,
+  handleDeleteAgent,
 } = useSettingsPanel({
   onClose: () => emit('close'),
 })

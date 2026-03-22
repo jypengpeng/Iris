@@ -79,6 +79,7 @@ export interface StatusInfo {
   provider: string
   model: string
   tools: string[]
+  disabledTools?: string[]
   stream: boolean
   authProtected?: boolean
   managementProtected?: boolean

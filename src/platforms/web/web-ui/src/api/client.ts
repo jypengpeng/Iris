@@ -150,6 +150,38 @@ export async function toggleAgentEnabled(enabled: boolean): Promise<{ success: b
   return res.json()
 }
 
+export async function initAgentManifest(): Promise<{ success: boolean; message: string }> {
+  const res = await request('/api/agents/init', { method: 'POST' })
+  return res.json()
+}
+
+export async function createAgentDef(name: string, description?: string): Promise<{ success: boolean; message: string }> {
+  const res = await request('/api/agents/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description }),
+  })
+  return res.json()
+}
+
+export async function updateAgentDef(name: string, fields: { description?: string; dataDir?: string }): Promise<{ success: boolean; message: string }> {
+  const res = await request('/api/agents/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, ...fields }),
+  })
+  return res.json()
+}
+
+export async function deleteAgentDef(name: string): Promise<{ success: boolean; message: string }> {
+  const res = await request('/api/agents/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  return res.json()
+}
+
 // ============ REST ============
 
 export async function getSessions(signal?: AbortSignal): Promise<{ sessions: SessionSummary[] }> {

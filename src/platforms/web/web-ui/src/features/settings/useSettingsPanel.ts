@@ -379,6 +379,18 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
   })
 
   const tools = ref<string[]>([])
+  const disabledTools = ref(new Set<string>())
+
+  function toggleTool(name: string) {
+    const next = new Set(disabledTools.value)
+    if (next.has(name)) {
+      next.delete(name)
+    } else {
+      next.add(name)
+    }
+    disabledTools.value = next
+  }
+
   const statusText = ref('')
   const statusError = ref(false)
   const saving = ref(false)
@@ -1119,6 +1131,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       () => JSON.stringify(pluginEntries.map(e => ({ name: e.name, type: e.type, enabled: e.enabled, config: e.config }))),
       () => JSON.stringify(computerUse),
       () => JSON.stringify(platformConfig),
+      () => JSON.stringify([...disabledTools.value].sort()),
     ],
     scheduleAutoSave,
   )
@@ -1155,7 +1168,58 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     syncDefaultModelName(modelEntries.map(entry => entry.modelName.trim()))
   }
 
-  onMounted(async () => {
+  // ---- 多 Agent 编辑切换 ----
+  const editingAgent = ref<string | null>(null)
+
+  function clearConfigState() {
+    modelEntries.splice(0)
+    mcpServers.splice(0)
+    subAgentEntries.splice(0)
+    modeEntries.splice(0)
+    pluginEntries.splice(0)
+    mcpOriginalNames.value = []
+    subAgentOriginalNames.value = []
+    modeOriginalNames.value = []
+    config.systemPrompt = ''
+    config.maxToolRounds = 10
+    config.stream = true
+    defaultModelName.value = ''
+    // Computer Use
+    computerUse.enabled = false
+    computerUse.environment = 'browser'
+    computerUse.screenWidth = ''
+    computerUse.screenHeight = ''
+    computerUse.postActionDelay = ''
+    computerUse.screenshotFormat = 'png'
+    computerUse.screenshotQuality = ''
+    computerUse.headless = false
+    computerUse.initialUrl = ''
+    computerUse.searchEngineUrl = ''
+    computerUse.highlightMouse = false
+    computerUse.targetWindow = ''
+    computerUse.backgroundMode = false
+    computerUse.maxRecentScreenshots = ''
+    computerUse.envToolBrowserMode = 'all'
+    computerUse.envToolBrowserList = ''
+    computerUse.envToolScreenMode = 'all'
+    computerUse.envToolScreenList = ''
+    computerUse.envToolBackgroundMode = 'all'
+    computerUse.envToolBackgroundList = ''
+    // Platform
+    platformConfig.types = []
+    platformConfig.web = { port: '', host: '', authToken: '', managementToken: '' }
+    platformConfig.discord = { token: '' }
+    platformConfig.telegram = { token: '', showToolStatus: false, groupMentionRequired: false }
+    platformConfig.wxwork = { botId: '', secret: '', showToolStatus: false }
+    platformConfig.lark = { appId: '', appSecret: '', verificationToken: '', encryptKey: '', showToolStatus: false }
+    platformConfig.qq = { wsUrl: '', accessToken: '', selfId: '', groupMode: 'at', showToolStatus: false }
+    // Tools
+    tools.value = []
+    disabledTools.value = new Set()
+    dirty.value = false
+  }
+
+  async function loadConfigData() {
     try {
       refreshAccessState()
       const data = await getConfig()
@@ -1345,12 +1409,32 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     try {
       const status = await getStatus()
       tools.value = status.tools || []
+      disabledTools.value = new Set(status.disabledTools || [])
       applyAccessRequirements(status)
     } catch (err: any) {
       rememberAccessRequirementsFromError(err)
       tools.value = []
     }
-  })
+  }
+
+  async function switchEditingAgent(agentName: string | null) {
+    const { setCurrentAgentName } = await import('../../api/client')
+    const previousAgent = editingAgent.value
+    editingAgent.value = agentName
+    setCurrentAgentName(agentName)
+    configLoaded = false
+    clearConfigState()
+    await loadConfigData()
+    // 如果切换失败，回退并重新加载之前的配置
+    if (!configLoaded && agentName) {
+      editingAgent.value = previousAgent
+      setCurrentAgentName(previousAgent)
+      clearConfigState()
+      await loadConfigData()
+    }
+  }
+
+  onMounted(() => loadConfigData())
 
   function buildModelEntryPayload(entry: ModelEntry): Record<string, unknown> {
     const payload: Record<string, unknown> = {
@@ -1550,6 +1634,8 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       }
       payload.computer_use = buildComputerUsePayload()
       payload.platform = buildPlatformPayload()
+      const disabledArr = [...disabledTools.value]
+      payload.tools = { disabledTools: disabledArr.length > 0 ? disabledArr : null }
       const result = await updateConfig(payload)
 
       if (result.ok) {
@@ -1568,6 +1654,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
         try {
           const st = await getStatus()
           tools.value = st.tools || []
+          disabledTools.value = new Set(st.disabledTools || [])
         } catch {
           // 静默
         }
@@ -1915,6 +2002,77 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
 
   onMounted(() => loadAgentStatus())
 
+  async function handleInitAgentManifest() {
+    try {
+      const { initAgentManifest } = await import('../../api/client')
+      const result = await initAgentManifest()
+      if (result.success) {
+        await loadAgentStatus()
+        statusText.value = result.message
+        statusError.value = false
+      } else {
+        statusText.value = result.message
+        statusError.value = true
+      }
+    } catch (err) {
+      statusText.value = `初始化失败: ${err instanceof Error ? err.message : String(err)}`
+      statusError.value = true
+    }
+  }
+
+  const newAgentName = ref('')
+  const newAgentDesc = ref('')
+
+  async function handleCreateAgent() {
+    const name = newAgentName.value.trim()
+    if (!name) return
+    try {
+      const { createAgentDef } = await import('../../api/client')
+      const result = await createAgentDef(name, newAgentDesc.value.trim() || undefined)
+      if (result.success) {
+        newAgentName.value = ''
+        newAgentDesc.value = ''
+        await loadAgentStatus()
+        statusText.value = result.message
+        statusError.value = false
+      } else {
+        statusText.value = result.message
+        statusError.value = true
+      }
+    } catch (err) {
+      statusText.value = `创建失败: ${err instanceof Error ? err.message : String(err)}`
+      statusError.value = true
+    }
+  }
+
+  async function handleDeleteAgent(name: string) {
+    const confirmed = await showConfirm({
+      title: '确认删除 Agent',
+      description: `确定要删除 Agent「${name}」吗？<br>仅移除配置条目，数据目录将保留。`,
+      confirmText: '确认删除',
+      danger: true,
+    })
+    if (!confirmed) return
+    try {
+      const { deleteAgentDef } = await import('../../api/client')
+      const result = await deleteAgentDef(name)
+      if (result.success) {
+        if (editingAgent.value === name) {
+          await switchEditingAgent(null)
+        }
+        await loadAgentStatus()
+        statusText.value = result.message
+        statusError.value = false
+      } else {
+        statusText.value = result.message
+        statusError.value = true
+      }
+    } catch (err) {
+      statusText.value = `删除失败: ${err instanceof Error ? err.message : String(err)}`
+      statusError.value = true
+    }
+  }
+
   // ---- 重置配置 ----
 
   const resetPending = ref(false)
@@ -1977,6 +2135,8 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     modelCatalogHint,
     modelKeyHint,
     tools,
+    disabledTools,
+    toggleTool,
     statusText,
     statusError,
     saving,
@@ -2022,5 +2182,12 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     resetPending,
     agentStatus,
     handleToggleAgent,
+    editingAgent,
+    switchEditingAgent,
+    handleInitAgentManifest,
+    newAgentName,
+    newAgentDesc,
+    handleCreateAgent,
+    handleDeleteAgent,
   }
 }

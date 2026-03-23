@@ -614,6 +614,11 @@ export class Backend extends EventEmitter {
     return this.prompt;
   }
 
+  /** 获取当前活跃的 sessionId（工具执行期间有效） */
+  getActiveSessionId(): string | undefined {
+    return this.activeSessionId;
+  }
+
   /** 获取模式注册表引用 */
   getModeRegistry(): ModeRegistry | undefined {
     return this.modeRegistry;

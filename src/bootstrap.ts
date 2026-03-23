@@ -36,6 +36,7 @@ import { deleteCode } from './tools/internal/delete_code';
 import { SubAgentTypeRegistry, buildSubAgentGuidance, createSubAgentTool } from './tools/internal/sub-agent';
 import { ModeRegistry, DEFAULT_MODE, DEFAULT_MODE_NAME } from './modes';
 import { PromptAssembler } from './prompt/assembler';
+import { createHistorySearchTool } from './tools/internal/history_search';
 import { DEFAULT_SYSTEM_PROMPT } from './prompt/templates/default';
 import { Backend } from './core/backend';
 import type { StorageProvider } from './storage/base';
@@ -242,6 +243,12 @@ export async function bootstrap(options?: BootstrapOptions): Promise<BootstrapRe
       maxDepth: config.system.maxAgentDepth,
     }));
   }
+
+  // 注册历史搜索工具（需要 backend 引用以获取 storage 和 sessionId）
+  tools.register(createHistorySearchTool({
+    getStorage: () => backend.getStorage(),
+    getSessionId: () => backend.getActiveSessionId(),
+  }));
 
   // 将插件钩子注入 Backend
   if (pluginManager && pluginManager.size > 0) {

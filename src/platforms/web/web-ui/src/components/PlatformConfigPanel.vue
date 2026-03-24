@@ -21,15 +21,17 @@
         <div v-if="loading" class="settings-section" style="text-align:center;padding:32px">加载中...</div>
         <template v-else>
           <section class="settings-section">
-            <div class="form-group" style="margin-bottom:16px">
-              <label>启动平台</label>
-              <div class="platform-checkbox-group">
-                <label v-for="pt in platformTypeOptions" :key="pt.value" class="platform-checkbox">
-                  <input type="checkbox" :value="pt.value" v-model="platformConfig.types" />
-                  {{ pt.label }}
+            <!-- Console -->
+            <div class="tier-block">
+              <div class="tier-header" @click="platformOpen.console = !platformOpen.console">
+                <span class="tier-arrow" :class="{ open: platformOpen.console }"></span>
+                <span class="tier-label">Console</span>
+                <span class="tier-desc">终端控制台</span>
+                <label class="toggle-switch tier-toggle" @click.stop>
+                  <input type="checkbox" :checked="platformConfig.types.includes('console')" @change="togglePlatformType('console')" />
+                  <span class="toggle-switch-ui"></span>
                 </label>
               </div>
-              <p class="field-hint">勾选后对应平台会在启动时激活。</p>
             </div>
 
             <!-- Web -->
@@ -38,6 +40,10 @@
                 <span class="tier-arrow" :class="{ open: platformOpen.web }"></span>
                 <span class="tier-label">Web</span>
                 <span class="tier-desc">Web GUI 端口、鉴权</span>
+                <label class="toggle-switch tier-toggle" @click.stop>
+                  <input type="checkbox" :checked="platformConfig.types.includes('web')" @change="togglePlatformType('web')" />
+                  <span class="toggle-switch-ui"></span>
+                </label>
               </div>
               <div v-show="platformOpen.web" class="tier-body">
                 <div class="settings-grid two-columns">
@@ -69,6 +75,10 @@
                 <span class="tier-arrow" :class="{ open: platformOpen.discord }"></span>
                 <span class="tier-label">Discord</span>
                 <span class="tier-desc">Discord Bot</span>
+                <label class="toggle-switch tier-toggle" @click.stop>
+                  <input type="checkbox" :checked="platformConfig.types.includes('discord')" @change="togglePlatformType('discord')" />
+                  <span class="toggle-switch-ui"></span>
+                </label>
               </div>
               <div v-show="platformOpen.discord" class="tier-body">
                 <div class="settings-grid two-columns">
@@ -87,6 +97,10 @@
                 <span class="tier-arrow" :class="{ open: platformOpen.telegram }"></span>
                 <span class="tier-label">Telegram</span>
                 <span class="tier-desc">Telegram Bot</span>
+                <label class="toggle-switch tier-toggle" @click.stop>
+                  <input type="checkbox" :checked="platformConfig.types.includes('telegram')" @change="togglePlatformType('telegram')" />
+                  <span class="toggle-switch-ui"></span>
+                </label>
               </div>
               <div v-show="platformOpen.telegram" class="tier-body">
                 <div class="settings-grid two-columns">
@@ -125,6 +139,10 @@
                 <span class="tier-arrow" :class="{ open: platformOpen.wxwork }"></span>
                 <span class="tier-label">企业微信</span>
                 <span class="tier-desc">企业微信机器人</span>
+                <label class="toggle-switch tier-toggle" @click.stop>
+                  <input type="checkbox" :checked="platformConfig.types.includes('wxwork')" @change="togglePlatformType('wxwork')" />
+                  <span class="toggle-switch-ui"></span>
+                </label>
               </div>
               <div v-show="platformOpen.wxwork" class="tier-body">
                 <div class="settings-grid two-columns">
@@ -157,6 +175,10 @@
                 <span class="tier-arrow" :class="{ open: platformOpen.lark }"></span>
                 <span class="tier-label">飞书</span>
                 <span class="tier-desc">飞书机器人</span>
+                <label class="toggle-switch tier-toggle" @click.stop>
+                  <input type="checkbox" :checked="platformConfig.types.includes('lark')" @change="togglePlatformType('lark')" />
+                  <span class="toggle-switch-ui"></span>
+                </label>
               </div>
               <div v-show="platformOpen.lark" class="tier-body">
                 <div class="settings-grid two-columns">
@@ -197,6 +219,10 @@
                 <span class="tier-arrow" :class="{ open: platformOpen.qq }"></span>
                 <span class="tier-label">QQ</span>
                 <span class="tier-desc">QQ 机器人（OneBot）</span>
+                <label class="toggle-switch tier-toggle" @click.stop>
+                  <input type="checkbox" :checked="platformConfig.types.includes('qq')" @change="togglePlatformType('qq')" />
+                  <span class="toggle-switch-ui"></span>
+                </label>
               </div>
               <div v-show="platformOpen.qq" class="tier-body">
                 <div class="settings-grid two-columns">
@@ -270,6 +296,7 @@ const platformConfig = reactive({
 })
 
 const platformOpen = reactive({
+  console: false,
   web: false,
   discord: false,
   telegram: false,
@@ -293,6 +320,12 @@ const qqGroupModeOptions = [
   { value: 'all', label: '全部消息', description: '响应群内所有消息' },
   { value: 'off', label: '关闭', description: '不响应群聊消息' },
 ]
+
+function togglePlatformType(value: string) {
+  const idx = platformConfig.types.indexOf(value)
+  if (idx === -1) platformConfig.types.push(value)
+  else platformConfig.types.splice(idx, 1)
+}
 
 function handleStringNumberInput(target: Record<string, any>, key: string, event: Event) {
   target[key] = (event.target as HTMLInputElement).value

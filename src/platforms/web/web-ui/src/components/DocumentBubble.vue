@@ -170,7 +170,9 @@ watch(previewOpen, async (open) => {
       const source = buildMarkdownSource(text, fileExt.value)
       renderedHtml.value = render(source)
       await nextTick()
-      if (contentEl.value) contentEl.value.scrollTop = 0
+      requestAnimationFrame(() => {
+        if (contentEl.value) contentEl.value.scrollTop = 0
+      })
     } catch {
       if (renderVersion === version) renderedHtml.value = ''
     }

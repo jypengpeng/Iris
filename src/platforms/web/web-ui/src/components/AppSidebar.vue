@@ -39,6 +39,22 @@
           <strong>TUI 终端</strong>
         </span>
       </RouterLink>
+
+      <button class="sidebar-nav-link" type="button" @click="handleOpenComputerUse">
+        <span class="sidebar-nav-icon"><AppIcon :name="ICONS.sidebar.computerUse" /></span>
+        <span class="sidebar-nav-copy">
+          <span class="sidebar-nav-label">Tools</span>
+          <strong>Computer Use</strong>
+        </span>
+      </button>
+
+      <button class="sidebar-nav-link" type="button" @click="handleOpenPlatformConfig">
+        <span class="sidebar-nav-icon"><AppIcon :name="ICONS.sidebar.platform" /></span>
+        <span class="sidebar-nav-copy">
+          <span class="sidebar-nav-label">Config</span>
+          <strong>平台配置</strong>
+        </span>
+      </button>
     </nav>
 
     <div class="sidebar-route-context">
@@ -156,16 +172,6 @@
       <button class="btn-settings" type="button" @click="handleOpenManagementToken">
         <AppIcon :name="ICONS.sidebar.key" />
         <span>访问凭证</span>
-      </button>
-
-      <button class="btn-settings" type="button" @click="handleOpenComputerUse">
-        <AppIcon :name="ICONS.sidebar.computerUse" />
-        <span>Computer Use</span>
-      </button>
-
-      <button class="btn-settings" type="button" @click="handleOpenPlatformConfig">
-        <AppIcon :name="ICONS.sidebar.platform" />
-        <span>平台配置</span>
       </button>
 
       <button class="btn-settings" type="button" @click="handleOpenSettings">

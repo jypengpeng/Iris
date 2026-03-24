@@ -11,8 +11,6 @@
       @toggle="sidebarOpen = false"
       @open-settings="handleOpenSettings"
       @open-management-token="handleOpenManagementToken"
-      @open-computer-use="handleOpenComputerUse"
-      @open-platform-config="handleOpenPlatformConfig"
     />
 
     <div class="app-main">
@@ -54,18 +52,6 @@
       </Transition>
     </template>
 
-    <template v-if="computerUseEverOpened">
-      <Transition name="panel-modal" appear>
-        <ComputerUsePanel v-show="computerUseOpen" @close="computerUseOpen = false" />
-      </Transition>
-    </template>
-
-    <template v-if="platformConfigEverOpened">
-      <Transition name="panel-modal" appear>
-        <PlatformConfigPanel v-show="platformConfigOpen" @close="platformConfigOpen = false" />
-      </Transition>
-    </template>
-
     <ManagementTokenDialog
       v-if="managementTokenOpen"
       @close="managementTokenOpen = false"
@@ -92,23 +78,17 @@ import { ICONS } from './constants/icons'
 import { onOpenSettingsRequest } from './composables/useAppActions'
 
 const SettingsPanel = defineAsyncComponent(() => import('./components/SettingsPanel.vue'))
-const ComputerUsePanel = defineAsyncComponent(() => import('./components/ComputerUsePanel.vue'))
-const PlatformConfigPanel = defineAsyncComponent(() => import('./components/PlatformConfigPanel.vue'))
 const ManagementTokenDialog = defineAsyncComponent(() => import('./components/ManagementTokenDialog.vue'))
 const MatrixRain = defineAsyncComponent(() => import('./components/MatrixRain.vue'))
 
-// 空闲时预加载常用面板 chunk，避免首次打开时下载延迟
+// 空闲时预加载设置面板 chunk，避免首次打开时下载延迟
 if (typeof requestIdleCallback === 'function') {
   requestIdleCallback(() => {
     import('./components/SettingsPanel.vue')
-    import('./components/ComputerUsePanel.vue')
-    import('./components/PlatformConfigPanel.vue')
   })
 } else {
   setTimeout(() => {
     import('./components/SettingsPanel.vue')
-    import('./components/ComputerUsePanel.vue')
-    import('./components/PlatformConfigPanel.vue')
   }, 2000)
 }
 
@@ -116,19 +96,13 @@ const router = useRouter()
 
 const sidebarOpen = ref(false)
 const settingsOpen = ref(false)
-const computerUseOpen = ref(false)
-const platformConfigOpen = ref(false)
 const managementTokenOpen = ref(false)
 const matrixRainActive = ref(false)
 
-// 延迟挂载：首次打开才挂载组件，之后通过 v-show 控制显隐（等效 KeepAlive 但 Transition 动画正常）
+// 延迟挂载：首次打开才挂载组件，之后通过 v-show 控制显隐
 const settingsEverOpened = ref(false)
-const computerUseEverOpened = ref(false)
-const platformConfigEverOpened = ref(false)
 
 watch(settingsOpen, (v) => { if (v) settingsEverOpened.value = true }, { flush: 'sync' })
-watch(computerUseOpen, (v) => { if (v) computerUseEverOpened.value = true }, { flush: 'sync' })
-watch(platformConfigOpen, (v) => { if (v) platformConfigEverOpened.value = true }, { flush: 'sync' })
 
 // 仅在进入终端视图时触发代码雨（离开时不播放，避免疲劳）
 watch(
@@ -171,16 +145,6 @@ const unsubSettings = onOpenSettingsRequest((section?: string) => {
   }
 })
 onBeforeUnmount(unsubSettings)
-
-function handleOpenComputerUse() {
-  computerUseOpen.value = true
-  sidebarOpen.value = false
-}
-
-function handleOpenPlatformConfig() {
-  platformConfigOpen.value = true
-  sidebarOpen.value = false
-}
 
 function handleOpenManagementToken() {
   managementTokenOpen.value = true

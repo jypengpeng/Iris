@@ -83,6 +83,8 @@
 :root[data-theme="light"] .settings-panel::before,
 :root[data-theme="light"] .deploy-confirm::before,
 :root[data-theme="light"] .terminal-frame::before,
+:root[data-theme="light"] .cu-frame::before,
+:root[data-theme="light"] .plat-frame::before,
 :root[data-theme="light"] .sidebar::before,
 :root[data-theme="light"] .sidebar::after,
 :root[data-theme="light"] .input-shell::before {
@@ -95,7 +97,9 @@
 :root[data-theme="light"] .deploy-form,
 :root[data-theme="light"] .deploy-output,
 :root[data-theme="light"] .settings-panel,
-:root[data-theme="light"] .deploy-confirm {
+:root[data-theme="light"] .deploy-confirm,
+:root[data-theme="light"] .cu-frame,
+:root[data-theme="light"] .plat-frame {
   backdrop-filter: none;
   border-color: #e5e7eb;
   box-shadow: var(--shadow-sm);

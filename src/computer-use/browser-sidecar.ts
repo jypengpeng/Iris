@@ -86,6 +86,7 @@ async function navigateTo(url: string): Promise<void> {
 }
 
 async function doKeyCombination(keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
   const mapped = keys.map(k => PLAYWRIGHT_KEY_MAP[k.toLowerCase()] ?? k);
   for (const key of mapped.slice(0, -1)) {
     await page.keyboard.down(key);
@@ -160,10 +161,16 @@ async function handleRequest(req: { id: number; method: string; params?: Record<
         page = await context.newPage();
 
         // 拦截新标签页，改为当前页导航
-        context.on('page', (newPage: any) => {
-          const newUrl = newPage.url();
-          newPage.close();
-          page.goto(newUrl);
+        context.on('page', async (newPage: any) => {
+          try {
+            // 等待 popup 加载以获取真实 URL（newPage.url() 初始可能是 about:blank）
+            await newPage.waitForLoadState('commit').catch(() => {});
+            const newUrl = newPage.url();
+            await newPage.close();
+            if (newUrl && newUrl !== 'about:blank') {
+              await page.goto(newUrl, { timeout: 30_000, waitUntil: 'domcontentloaded' });
+            }
+          } catch { /* popup 处理失败不影响主流程 */ }
         });
 
         const initialUrl = cfg.initialUrl ?? 'https://www.google.com';
@@ -346,11 +353,13 @@ rl.on('line', (line) => {
   });
 });
 
-// 主进程断开 stdin 时自动清理退出
+// 主进程断开 stdin 时自动清理退出（带超时保护，防止 Chromium 卡死）
 process.stdin.on('end', async () => {
+  const forceExitTimer = setTimeout(() => process.exit(1), 3000);
   if (browser) {
     try { await browser.close(); } catch {}
   }
+  clearTimeout(forceExitTimer);
   process.exit(0);
 });
 

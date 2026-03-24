@@ -230,12 +230,14 @@ async function handleRequest(req: { id: number; method: string; params?: Record<
       case 'scrollDocument': {
         if (!adapter) throw new Error('adapter 未初始化');
         const dir = p.direction as string;
-        const amount = Math.round(screenSize[1] / 2);
+        // 单位：滚轮格数（notch），adapter.scroll 会 ×120 转为 WHEEL_DELTA
+        // 5 notch ≈ 一屏翻页效果（与 scrollAt 默认 3 notch 对齐）
+        const notches = 5;
         switch (dir) {
-          case 'up':    await adapter.scroll(screenSize[0] / 2, screenSize[1] / 2, 0, -amount); break;
-          case 'down':  await adapter.scroll(screenSize[0] / 2, screenSize[1] / 2, 0, amount); break;
-          case 'left':  await adapter.scroll(screenSize[0] / 2, screenSize[1] / 2, -amount, 0); break;
-          case 'right': await adapter.scroll(screenSize[0] / 2, screenSize[1] / 2, amount, 0); break;
+          case 'up':    await adapter.scroll(screenSize[0] / 2, screenSize[1] / 2, 0, -notches); break;
+          case 'down':  await adapter.scroll(screenSize[0] / 2, screenSize[1] / 2, 0, notches); break;
+          case 'left':  await adapter.scroll(screenSize[0] / 2, screenSize[1] / 2, -notches, 0); break;
+          case 'right': await adapter.scroll(screenSize[0] / 2, screenSize[1] / 2, notches, 0); break;
         }
         result = await captureState();
         break;

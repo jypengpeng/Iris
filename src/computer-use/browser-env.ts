@@ -94,32 +94,48 @@ export class BrowserEnvironment implements Computer {
     });
 
     // 发送 initialize 指令
-    const result = await this._call('initialize', {
-      screenWidth: this._config.screenWidth,
-      screenHeight: this._config.screenHeight,
-      headless: this._config.headless,
-      initialUrl: this._config.initialUrl,
-      searchEngineUrl: this._config.searchEngineUrl,
-      highlightMouse: this._config.highlightMouse,
-    });
+    try {
+      const result = await this._call('initialize', {
+        screenWidth: this._config.screenWidth,
+        screenHeight: this._config.screenHeight,
+        headless: this._config.headless,
+        initialUrl: this._config.initialUrl,
+        searchEngineUrl: this._config.searchEngineUrl,
+        highlightMouse: this._config.highlightMouse,
+      });
 
-    if (result.screenSize) {
-      this._screenSize = result.screenSize;
+      if (result.screenSize) {
+        this._screenSize = result.screenSize;
+      }
+    } catch (err) {
+      // 初始化失败时清理已 spawn 的子进程，防止 orphan
+      await this.dispose();
+      throw err;
     }
   }
 
   async dispose(): Promise<void> {
+    // 1. 请求 sidecar 优雅退出（短超时，不阻塞后续 kill）
     try {
-      await this._call('dispose');
-    } catch { /* sidecar 可能已退出 */ }
-    if (this._child) {
-      this._child.stdin?.end();
-      await new Promise<void>(resolve => {
-        const timer = setTimeout(() => { this._child?.kill(); resolve(); }, 5000);
-        this._child!.on('exit', () => { clearTimeout(timer); resolve(); });
-      });
-      this._child = null;
-    }
+      await this._call('dispose', undefined, 3000);
+    } catch { /* 超时或 sidecar 已退出 */ }
+
+    // 2. 强制清理子进程
+    const child = this._child;
+    if (!child) return;
+    this._child = null;
+    this._rl?.close();
+    this._rl = null;
+
+    child.stdin?.end();
+
+    // 如果已经退出，直接返回
+    if (child.exitCode !== null) return;
+
+    await new Promise<void>(resolve => {
+      const timer = setTimeout(() => { forceKillTree(child); resolve(); }, 3000);
+      child.on('exit', () => { clearTimeout(timer); resolve(); });
+    });
   }
 
   // ============ Computer 接口 ============
@@ -191,16 +207,22 @@ export class BrowserEnvironment implements Computer {
     };
   }
 
-  /** 发送 IPC 请求并等待响应 */
-  private _call(method: string, params?: Record<string, unknown>): Promise<any> {
+  /** 发送 IPC 请求并等待响应（带超时保护） */
+  private _call(method: string, params?: Record<string, unknown>, timeoutMs = 30000): Promise<any> {
     if (!this._child?.stdin) {
       return Promise.reject(new Error('browser sidecar 未启动'));
     }
     const id = this._nextId++;
     return new Promise((resolve, reject) => {
-      this._pending.set(id, { resolve, reject });
-      const msg = JSON.stringify({ id, method, params: params ?? {} }) + '\n';
-      this._child!.stdin!.write(msg);
+      const timer = setTimeout(() => {
+        this._pending.delete(id);
+        reject(new Error(`browser sidecar RPC '${method}' 超时 (${timeoutMs}ms)`));
+      }, timeoutMs);
+      this._pending.set(id, {
+        resolve: (val: any) => { clearTimeout(timer); resolve(val); },
+        reject: (err: Error) => { clearTimeout(timer); reject(err); },
+      });
+      this._child!.stdin!.write(JSON.stringify({ id, method, params: params ?? {} }) + '\n');
     });
   }
 }
@@ -228,4 +250,16 @@ function resolveSidecarCommand(type: string, sidecarFile: string): { cmd: string
 
   // 回退 node + tsx
   return { cmd: 'node', args: ['--import', 'tsx', sidecarTs] };
+}
+
+/** 强制杀死子进程树（Windows 下 taskkill /T 杀整棵进程树，避免孤儿 Chromium） */
+function forceKillTree(child: ChildProcess): void {
+  try {
+    if (process.platform === 'win32' && child.pid) {
+      const tk = spawn('taskkill', ['/T', '/F', '/PID', String(child.pid)], { stdio: 'ignore' });
+      tk.on('error', () => {}); // 忽略 taskkill 自身的错误
+    } else {
+      child.kill('SIGKILL');
+    }
+  } catch { /* 进程可能已退出 */ }
 }

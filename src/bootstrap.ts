@@ -11,6 +11,8 @@
 
 import type { Computer } from './computer-use/types';
 import { loadConfig, findConfigFile, AppConfig } from './config';
+import { loadRawConfigDir } from './config/raw';
+import { initCuConfigSnapshot } from './config/runtime';
 import type { AgentPaths } from './paths';
 import { logsDir as globalLogsDir } from './paths';
 import { createLLMRouter } from './llm/factory';
@@ -199,6 +201,10 @@ export async function bootstrap(options?: BootstrapOptions): Promise<BootstrapRe
       console.error('[Iris] 已跳过 Computer Use，其余功能正常启动。');
     }
   }
+
+  // 记录 CU 初始快照，防止后续无关配置保存时误触发 sidecar 重启
+  const rawData = loadRawConfigDir(configDir);
+  initCuConfigSnapshot(rawData.computer_use);
 
   // ---- 3.5 注册子代理工具 ----
   const subAgentTypes = new SubAgentTypeRegistry();

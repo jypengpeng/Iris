@@ -1,23 +1,15 @@
 <template>
-  <div
-    class="overlay"
-    @pointerdown.self="overlayIntent = true"
-    @pointerup.self="overlayIntent && emit('close')"
-    @pointercancel.self="overlayIntent = false"
-  >
-    <div class="settings-panel" @pointerdown="overlayIntent = false">
-      <div class="settings-header">
-        <div class="settings-title-group">
-          <span class="settings-kicker">Platform</span>
+  <main class="plat-area">
+    <section class="plat-frame">
+      <header class="plat-topbar">
+        <div class="plat-topbar-main">
+          <span class="plat-kicker">Platform</span>
           <h2>平台配置</h2>
           <p>配置 Iris 运行在哪些平台上，以及各平台的连接凭证。</p>
         </div>
-        <button class="btn-close" type="button" aria-label="关闭" @click="emit('close')">
-          <AppIcon :name="ICONS.common.close" />
-        </button>
-      </div>
+      </header>
 
-      <div class="settings-body">
+      <div class="plat-body">
         <div v-if="loading" class="settings-section" style="text-align:center;padding:32px">加载中...</div>
         <template v-else>
           <section class="settings-section">
@@ -259,27 +251,22 @@
             </div>
           </section>
         </template>
-
-        <div class="form-actions">
-          <span v-if="saving" class="settings-status">自动保存中...</span>
-          <span v-else-if="statusError" class="settings-status error">{{ statusText }}</span>
-          <span v-else class="settings-status">已自动保存</span>
-        </div>
       </div>
-    </div>
-  </div>
+
+      <footer class="plat-footer">
+        <span v-if="saving" class="settings-status">自动保存中...</span>
+        <span v-else-if="statusError" class="settings-status error">{{ statusText }}</span>
+        <span v-else class="settings-status">已自动保存</span>
+      </footer>
+    </section>
+  </main>
 </template>
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import AppIcon from './AppIcon.vue'
-import AppSelect from './AppSelect.vue'
-import { ICONS } from '../constants/icons'
+import AppSelect from '../components/AppSelect.vue'
 import { getConfig, updateConfig } from '../api/client'
 
-const emit = defineEmits<{ (e: 'close'): void }>()
-
-const overlayIntent = ref(false)
 const loading = ref(true)
 const saving = ref(false)
 const statusText = ref('')
@@ -304,16 +291,6 @@ const platformOpen = reactive({
   lark: false,
   qq: false,
 })
-
-const platformTypeOptions = [
-  { value: 'console', label: 'Console' },
-  { value: 'web', label: 'Web' },
-  { value: 'discord', label: 'Discord' },
-  { value: 'telegram', label: 'Telegram' },
-  { value: 'wxwork', label: '企业微信' },
-  { value: 'lark', label: '飞书' },
-  { value: 'qq', label: 'QQ' },
-]
 
 const qqGroupModeOptions = [
   { value: 'at', label: '@ 触发', description: '群聊中需要 @ 机器人' },
@@ -485,3 +462,80 @@ onBeforeUnmount(() => {
   if (autoSaveTimer) clearTimeout(autoSaveTimer)
 })
 </script>
+
+<style scoped>
+.plat-area {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  max-width: var(--chat-surface-max-width);
+  margin: 0 auto;
+}
+
+.plat-frame {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  background: var(--surface-shell);
+  border: 1px solid var(--shell-stroke);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 30px 74px rgba(4, 8, 20, 0.34);
+  backdrop-filter: blur(var(--backdrop-blur-shell));
+  overflow: hidden;
+  transition:
+    transform var(--transition-medium),
+    box-shadow var(--transition-medium),
+    border-color var(--transition-medium),
+    background var(--transition-slow);
+}
+
+.plat-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--shell-stroke);
+}
+
+.plat-topbar-main { flex: 1; min-width: 0; }
+
+.plat-kicker {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.plat-topbar h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.plat-topbar p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.plat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+}
+
+.plat-footer {
+  padding: 10px 24px;
+  border-top: 1px solid var(--shell-stroke);
+  text-align: right;
+}
+</style>

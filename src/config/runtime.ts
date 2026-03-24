@@ -120,7 +120,39 @@ export async function applyRuntimeConfigReload(
 /** 上次应用的 computer_use 配置快照，用于跳过无变化的重载 */
 let lastCuConfigSnapshot = '';
 
+/** bootstrap 初始化 CU 后调用，记录初始快照，避免首次配置保存时误触发重载 */
+export function initCuConfigSnapshot(rawComputerUse: any): void {
+  lastCuConfigSnapshot = JSON.stringify(rawComputerUse ?? null);
+}
+
+/** 并发守卫：防止快速连续保存导致多个 reload 重叠 */
+let cuReloading = false;
+let cuPendingReload: { context: RuntimeConfigReloadContext; tools: ToolRegistry; mergedConfig: any } | null = null;
+
 async function reloadComputerUse(
+  context: RuntimeConfigReloadContext,
+  tools: ToolRegistry,
+  mergedConfig: any,
+): Promise<void> {
+  if (cuReloading) {
+    // 正在重载中，记下最新配置，当前重载完成后会重新检查
+    cuPendingReload = { context, tools, mergedConfig };
+    return;
+  }
+  cuReloading = true;
+  try {
+    await doReloadComputerUse(context, tools, mergedConfig);
+  } finally {
+    cuReloading = false;
+    if (cuPendingReload) {
+      const pending = cuPendingReload;
+      cuPendingReload = null;
+      await reloadComputerUse(pending.context, pending.tools, pending.mergedConfig);
+    }
+  }
+}
+
+async function doReloadComputerUse(
   context: RuntimeConfigReloadContext,
   tools: ToolRegistry,
   mergedConfig: any,

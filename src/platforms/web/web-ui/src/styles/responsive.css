@@ -177,7 +177,9 @@
   .chat-frame,
   .terminal-frame,
   .sidebar,
-  .settings-panel {
+  .settings-panel,
+  .cu-frame,
+  .plat-frame {
     border-radius: 24px;
   }
 

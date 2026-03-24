@@ -91,7 +91,9 @@
 .deploy-output,
 .settings-panel,
 .deploy-confirm,
-.terminal-frame {
+.terminal-frame,
+.cu-frame,
+.plat-frame {
   position: relative;
   isolation: isolate;
 }
@@ -101,7 +103,9 @@
 .deploy-output::before,
 .settings-panel::before,
 .deploy-confirm::before,
-.terminal-frame::before {
+.terminal-frame::before,
+.cu-frame::before,
+.plat-frame::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -117,7 +121,9 @@
 .deploy-output > *,
 .settings-panel > *,
 .deploy-confirm > *,
-.terminal-frame > * {
+.terminal-frame > *,
+.cu-frame > *,
+.plat-frame > * {
   position: relative;
   z-index: 1;
 }

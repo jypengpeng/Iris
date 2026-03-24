@@ -40,21 +40,21 @@
         </span>
       </RouterLink>
 
-      <button class="sidebar-nav-link" type="button" @click="handleOpenComputerUse">
+      <RouterLink class="sidebar-nav-link" to="/computer-use" @click="emit('toggle')">
         <span class="sidebar-nav-icon"><AppIcon :name="ICONS.sidebar.computerUse" /></span>
         <span class="sidebar-nav-copy">
           <span class="sidebar-nav-label">Tools</span>
           <strong>Computer Use</strong>
         </span>
-      </button>
+      </RouterLink>
 
-      <button class="sidebar-nav-link" type="button" @click="handleOpenPlatformConfig">
+      <RouterLink class="sidebar-nav-link" to="/platform-config" @click="emit('toggle')">
         <span class="sidebar-nav-icon"><AppIcon :name="ICONS.sidebar.platform" /></span>
         <span class="sidebar-nav-copy">
           <span class="sidebar-nav-label">Config</span>
           <strong>平台配置</strong>
         </span>
-      </button>
+      </RouterLink>
     </nav>
 
     <div class="sidebar-route-context">
@@ -147,7 +147,7 @@
         </ul>
       </div>
 
-      <div class="sidebar-context-card" v-else>
+      <div class="sidebar-context-card" v-else-if="route.path === '/deploy'">
         <span class="sidebar-context-kicker">Deploy Focus</span>
         <h3>发布前检查</h3>
         <ul class="sidebar-context-list">
@@ -203,8 +203,6 @@ const emit = defineEmits<{
   (e: 'toggle'): void
   (e: 'open-settings'): void
   (e: 'open-management-token'): void
-  (e: 'open-computer-use'): void
-  (e: 'open-platform-config'): void
 }>()
 
 const route = useRoute()
@@ -425,16 +423,6 @@ function handleOpenSettings() {
 
 function handleOpenManagementToken() {
   emit('open-management-token')
-  emit('toggle')
-}
-
-function handleOpenComputerUse() {
-  emit('open-computer-use')
-  emit('toggle')
-}
-
-function handleOpenPlatformConfig() {
-  emit('open-platform-config')
   emit('toggle')
 }
 

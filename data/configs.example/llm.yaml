@@ -73,6 +73,19 @@ models:
 #     apiKey: your-api-key-here
 #     model: claude-sonnet-4-6
 #     baseUrl: https://api.anthropic.com/v1
+#     # Enable Anthropic Prompt Caching (manual cache breakpoints).
+#     # Injects cache_control: { type: "ephemeral" } at key positions:
+#     #   1. tools    — last tool definition
+#     #   2. system   — system instruction (converted to content-block array)
+#     #   3. messages — last content block of the last user message
+#     # Uses at most 3 breakpoints (Anthropic allows up to 4).
+#     # Cached reads cost only 10% of base input token price.
+#     # promptCaching: true
+#     # Enable Anthropic automatic prompt caching.
+#     # Adds top-level cache_control to the request body;
+#     # the server decides which prefix to cache automatically.
+#     # Can be used independently or together with promptCaching.
+#     # autoCaching: true
 # Gemini 示例：
 # models:
 #   gemini_flash:

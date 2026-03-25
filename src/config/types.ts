@@ -25,6 +25,36 @@ export interface LLMConfig {
   headers?: Record<string, string>;
   /** 自定义请求体，会深合并到 provider 编码后的最终请求体，支持嵌套参数 */
   requestBody?: Record<string, unknown>;
+  /**
+   * [Claude only] Enable Anthropic Prompt Caching (manual cache breakpoints).
+   *
+   * When enabled, cache_control: { type: "ephemeral" } markers are injected at
+   * key positions in the request body following Anthropic's cache prefix hierarchy:
+   *   1. tools  — last tool definition
+   *   2. system — system instruction (converted to content-block array)
+   *   3. messages — last content block of the last user message
+   *
+   * At most 3 breakpoints are used (Anthropic allows up to 4).
+   * Cached reads cost only 10% of base input token price.
+   *
+   * Only takes effect when provider is "claude". Ignored for other providers.
+   * Default: false
+   */
+  promptCaching?: boolean;
+  /**
+   * [Claude only] Enable Anthropic automatic prompt caching.
+   *
+   * When enabled, a top-level `cache_control: { type: "ephemeral" }` field is
+   * added to the request body. The server automatically places the cache
+   * breakpoint on the last cacheable block and moves it forward as
+   * conversations grow. No per-block markers are injected.
+   *
+   * Can be used independently or together with promptCaching (explicit breakpoints).
+   * When combined, the automatic breakpoint uses 1 of the 4 available slots.
+   * Only takes effect when provider is "claude". Ignored for other providers.
+   * Default: false
+   */
+  autoCaching?: boolean;
   [key: string]: unknown;
 }
 

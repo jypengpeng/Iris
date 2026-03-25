@@ -11,6 +11,8 @@ export interface ClaudeProviderConfig {
   baseUrl?: string;
   headers?: Record<string, string>;
   requestBody?: Record<string, unknown>;
+  promptCaching?: boolean;
+  autoCaching?: boolean;
 }
 
 export function createClaudeProvider(config: ClaudeProviderConfig): LLMProvider {
@@ -18,7 +20,7 @@ export function createClaudeProvider(config: ClaudeProviderConfig): LLMProvider 
   const baseUrl = (config.baseUrl || 'https://api.anthropic.com/v1').replace(/\/+$/, '');
 
   return new LLMProvider(
-    new ClaudeFormat(model),
+    new ClaudeFormat(model, config.promptCaching, config.autoCaching),
     {
       url: `${baseUrl}/messages`,
       headers: {

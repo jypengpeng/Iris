@@ -48,6 +48,8 @@ export function parseSingleLLMConfig(raw: any = {}): LLMConfig {
       : undefined,
     headers: source.headers && typeof source.headers === 'object' && !Array.isArray(source.headers) ? source.headers : undefined,
     requestBody: source.requestBody && typeof source.requestBody === 'object' && !Array.isArray(source.requestBody) ? source.requestBody : undefined,
+    promptCaching: source.promptCaching === true ? true : undefined,
+    autoCaching: source.autoCaching === true ? true : undefined,
   };
 }
 

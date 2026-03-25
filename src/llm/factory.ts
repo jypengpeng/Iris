@@ -33,6 +33,8 @@ export function createLLMFromConfig(config: LLMConfig, registry?: Pick<LLMProvid
         baseUrl: config.baseUrl,
         headers: config.headers,
         requestBody: config.requestBody,
+        promptCaching: config.promptCaching === true,
+        autoCaching: config.autoCaching === true,
       });
     case 'openai-responses':
       return createOpenAIResponsesProvider({

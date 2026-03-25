@@ -13,7 +13,7 @@ import { consumeCallId, normalizeCallId, resolveCallId } from './tool-call-ids';
 import { sanitizeSchemaForClaude } from './schema-sanitizer';
 
 export class ClaudeFormat implements FormatAdapter {
-  constructor(private model: string) {}
+  constructor(private model: string, private promptCaching?: boolean, private autoCaching?: boolean) {}
 
   // ============ 编码请求：Gemini → Claude ============
 
@@ -155,6 +155,19 @@ export class ClaudeFormat implements FormatAdapter {
 
     // 流式参数
     if (stream) body.stream = true;
+
+    // Inject manual cache breakpoints when Prompt Caching is enabled.
+    // Follows Anthropic's cache prefix hierarchy: tools → system → messages.
+    // At most 3 breakpoints (Anthropic allows up to 4).
+    if (this.promptCaching) {
+      this.injectCacheBreakpoints(body);
+    }
+
+    // Inject top-level automatic caching marker.
+    // The server places the breakpoint on the last cacheable block automatically.
+    if (this.autoCaching) {
+      (body as any).cache_control = { type: 'ephemeral' };
+    }
 
     return body;
   }
@@ -321,6 +334,51 @@ export class ClaudeFormat implements FormatAdapter {
       inputTokens: 0,
       inThinkingBlock: false,
     } as ClaudeStreamState;
+  }
+
+  /**
+   * Inject manual cache breakpoints for Anthropic Prompt Caching.
+   *
+   * Cache prefix hierarchy (order matters):
+   *   1. tools    — mark the last tool definition
+   *   2. system   — convert string to content-block array, mark the last block
+   *   3. messages — mark the last content block of the last user message
+   */
+  private injectCacheBreakpoints(body: Record<string, unknown>): void {
+    const cacheControl = { type: 'ephemeral' as const };
+
+    // 1. Mark the last tool definition
+    const tools = body.tools as any[] | undefined;
+    if (tools && tools.length > 0) {
+      tools[tools.length - 1].cache_control = cacheControl;
+    }
+
+    // 2. Convert system from string to content-block array and mark it.
+    //    Anthropic accepts system as either a string or an array of content blocks;
+    //    the array form is required to attach cache_control.
+    if (typeof body.system === 'string' && body.system) {
+      body.system = [
+        { type: 'text', text: body.system, cache_control: cacheControl },
+      ];
+    } else if (Array.isArray(body.system) && body.system.length > 0) {
+      (body.system as any[])[body.system.length - 1].cache_control = cacheControl;
+    }
+
+    // 3. Mark the last content block of the last user message.
+    //    This caches the entire conversation history prefix.
+    const messages = body.messages as any[] | undefined;
+    if (messages && messages.length > 0) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i];
+        if (msg.role === 'user' && Array.isArray(msg.content) && msg.content.length > 0) {
+          const lastBlock = msg.content[msg.content.length - 1];
+          if (typeof lastBlock === 'object' && lastBlock !== null) {
+            lastBlock.cache_control = cacheControl;
+          }
+          break;
+        }
+      }
+    }
   }
 }
 

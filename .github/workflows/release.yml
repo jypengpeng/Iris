@@ -66,10 +66,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -110,7 +110,7 @@ jobs:
           Compress-Archive -Path "dist/bin/iris-windows-${{ matrix.arch }}\*" -DestinationPath "iris-windows-${{ matrix.arch }}.zip"
 
       - name: Upload release artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: iris-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
@@ -119,7 +119,7 @@ jobs:
           retention-days: 30
 
       - name: Upload npm package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: npm-iris-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/bin/iris-${{ matrix.platform }}-${{ matrix.arch }}/
@@ -133,7 +133,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Resolve release tag
         id: tag
@@ -164,7 +164,7 @@ jobs:
           git push origin "${{ steps.tag.outputs.tag }}"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts/
           pattern: iris-*
@@ -194,10 +194,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
@@ -208,7 +208,7 @@ jobs:
           bun-version: "1.2"
 
       - name: Download npm package artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: dist/bin/
           pattern: npm-iris-*

@@ -6,7 +6,7 @@ import { Backend } from '../../core/backend';
 import { DEFAULTS, parseLLMConfig } from '../../config/llm';
 import { parseSystemConfig } from '../../config/system';
 import { parseToolsConfig } from '../../config/tools';
-import { isMasked, readEditableConfig, updateEditableConfig } from '../../config/manage';
+import { readEditableConfig, updateEditableConfig } from '../../config/manage';
 import { applyRuntimeConfigReload } from '../../config/runtime';
 import { MCPManager, MCPServerInfo } from '../../mcp';
 import { supportsConsoleDiffApprovalViewSetting } from './diff-approval';
@@ -128,7 +128,7 @@ export function applyModelProviderChange(
   return {
     ...model,
     provider: nextProvider,
-    apiKey: model.apiKey.startsWith('****') ? '' : model.apiKey,
+    apiKey: model.apiKey,
     modelId: !model.modelId || model.modelId === oldDefaults.model
       ? newDefaults.model ?? model.modelId
       : model.modelId,
@@ -162,10 +162,7 @@ function buildModelPayload(model: ConsoleModelSettings): Record<string, unknown>
     model: model.modelId,
     baseUrl: model.baseUrl,
   };
-
-  if (model.apiKey && !model.apiKey.startsWith('****')) {
-    payload.apiKey = model.apiKey;
-  }
+  payload.apiKey = model.apiKey || null;
 
   return payload;
 }
@@ -303,7 +300,7 @@ function buildMCPPayload(snapshot: ConsoleSettingsSnapshot): { servers: Record<s
       entry.command = null;
       entry.args = null;
       entry.cwd = null;
-      if (server.authHeader.trim() && !isMasked(server.authHeader.trim())) {
+      if (server.authHeader.trim()) {
         entry.headers = { Authorization: server.authHeader.trim() };
       } else if (!server.authHeader.trim()) {
         entry.headers = null;

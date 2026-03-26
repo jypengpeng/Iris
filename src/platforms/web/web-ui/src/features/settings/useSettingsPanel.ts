@@ -299,15 +299,13 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     const newDefaults = PROVIDER_DEFAULTS[entry.provider] ?? { model: '', baseUrl: '', contextWindow: 0 }
     if (!entry.modelId || entry.modelId === oldDefaults.model) entry.modelId = newDefaults.model
     if (!entry.baseUrl || entry.baseUrl === oldDefaults.baseUrl) entry.baseUrl = newDefaults.baseUrl
-    if (entry.apiKey.startsWith('****')) entry.apiKey = ''
     entry.lastProvider = entry.provider
     resetModelCatalog(entry)
   }
 
   function modelKeyHint(entry: ModelEntry): string {
     if (!entry.apiKey) return '未配置 API Key。'
-    if (entry.apiKey.startsWith('****')) return '已读取已保存密钥，保持不变则不会覆盖。'
-    return '将使用当前输入的密钥保存配置。'
+    return 'API Key 已配置。'
   }
 
   function modelCatalogHint(entry: ModelEntry): string {
@@ -322,8 +320,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
 
   function normalizeApiKeyForLookup(apiKey: string): string | undefined {
     const trimmed = apiKey.trim()
-    if (!trimmed || trimmed.startsWith('****')) return undefined
-    return trimmed
+    return trimmed || undefined
   }
 
   async function fetchModelOptions(index: number) {
@@ -829,36 +826,25 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
     const webPort = String(platformConfig.web.port).trim()
     web.port = webPort ? (Number(webPort) || null) : null
     web.host = platformConfig.web.host.trim() || null
-    if (platformConfig.web.authToken && !platformConfig.web.authToken.startsWith('****')) {
-      web.authToken = platformConfig.web.authToken
-    }
-    if (platformConfig.web.managementToken && !platformConfig.web.managementToken.startsWith('****')) {
-      web.managementToken = platformConfig.web.managementToken
-    }
+    web.authToken = platformConfig.web.authToken.trim() || null
+    web.managementToken = platformConfig.web.managementToken.trim() || null
     p.web = web
     // Discord
-    const discord: Record<string, any> = {}
-    if (platformConfig.discord.token && !platformConfig.discord.token.startsWith('****')) {
-      discord.token = platformConfig.discord.token
-    }
+    const discord: Record<string, any> = { token: platformConfig.discord.token.trim() || null }
     p.discord = discord
     // Telegram
     const telegram: Record<string, any> = {
       showToolStatus: platformConfig.telegram.showToolStatus,
       groupMentionRequired: platformConfig.telegram.groupMentionRequired,
     }
-    if (platformConfig.telegram.token && !platformConfig.telegram.token.startsWith('****')) {
-      telegram.token = platformConfig.telegram.token
-    }
+    telegram.token = platformConfig.telegram.token.trim() || null
     p.telegram = telegram
     // 企业微信
     const wxwork: Record<string, any> = {
       botId: platformConfig.wxwork.botId.trim() || null,
       showToolStatus: platformConfig.wxwork.showToolStatus,
     }
-    if (platformConfig.wxwork.secret && !platformConfig.wxwork.secret.startsWith('****')) {
-      wxwork.secret = platformConfig.wxwork.secret
-    }
+    wxwork.secret = platformConfig.wxwork.secret.trim() || null
     p.wxwork = wxwork
     // 飞书
     const lark: Record<string, any> = {
@@ -867,9 +853,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       encryptKey: platformConfig.lark.encryptKey.trim() || null,
       showToolStatus: platformConfig.lark.showToolStatus,
     }
-    if (platformConfig.lark.appSecret && !platformConfig.lark.appSecret.startsWith('****')) {
-      lark.appSecret = platformConfig.lark.appSecret
-    }
+    lark.appSecret = platformConfig.lark.appSecret.trim() || null
     p.lark = lark
     // QQ
     const qq: Record<string, any> = {
@@ -878,9 +862,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       groupMode: platformConfig.qq.groupMode || null,
       showToolStatus: platformConfig.qq.showToolStatus,
     }
-    if (platformConfig.qq.accessToken && !platformConfig.qq.accessToken.startsWith('****')) {
-      qq.accessToken = platformConfig.qq.accessToken
-    }
+    qq.accessToken = platformConfig.qq.accessToken.trim() || null
     p.qq = qq
     return p
   }
@@ -996,9 +978,9 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
         entry.command = null
         entry.args = null
         entry.cwd = null
-        if (s.authHeader && !s.authHeader.startsWith('****')) {
-          entry.headers = { Authorization: s.authHeader }
-        } else if (!s.authHeader) {
+        if (s.authHeader.trim()) {
+          entry.headers = { Authorization: s.authHeader.trim() }
+        } else {
           entry.headers = null
         }
       }
@@ -1478,9 +1460,7 @@ export function useSettingsPanel(options: UseSettingsPanelOptions) {
       model: entry.modelId,
       baseUrl: entry.baseUrl,
     }
-    if (entry.apiKey && !entry.apiKey.startsWith('****')) {
-      payload.apiKey = entry.apiKey
-    }
+    payload.apiKey = entry.apiKey || null
     // contextWindow
     const cw = String(entry.contextWindow).trim()
     if (cw) {

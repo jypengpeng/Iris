@@ -113,10 +113,6 @@ export function deepMerge(target: any, source: any): any {
       continue;
     }
 
-    if (typeof value === 'string' && isMasked(value)) {
-      continue;
-    }
-
     if (Array.isArray(value)) {
       result[key] = [...value];
       continue;
@@ -162,7 +158,7 @@ function normalizeMergedConfig(data: any): any {
 }
 
 export function readEditableConfig(configDir: string): any {
-  return sanitizeConfig(loadRawConfigDir(configDir));
+  return JSON.parse(JSON.stringify(loadRawConfigDir(configDir) ?? {}));
 }
 
 export function updateEditableConfig(configDir: string, updates: any): { mergedRaw: any; sanitized: any } {

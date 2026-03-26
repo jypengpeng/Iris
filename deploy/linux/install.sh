@@ -2,7 +2,7 @@
 # ==========================================
 #  Iris 一键安装脚本
 #
-#  用法：curl -fsSL https://raw.githubusercontent.com/Lianues/IrisAgent/main/deploy/linux/install.sh | bash
+#  用法：curl -fsSL https://raw.githubusercontent.com/Lianues/Iris/main/deploy/linux/install.sh | bash
 #
 #  支持环境：
 #  - Linux (x64 / arm64)：Ubuntu, Debian, CentOS, Fedora, Alpine, Arch ...
@@ -29,9 +29,9 @@ set -euo pipefail
 
 # ── 全局变量 ─────────────────────────────
 IRIS_VERSION="${IRIS_VERSION:-latest}"
-REPO_URL="${IRIS_REPO_URL:-https://github.com/Lianues/IrisAgent.git}"
+REPO_URL="${IRIS_REPO_URL:-https://github.com/Lianues/Iris.git}"
 REPO_BRANCH="${IRIS_REPO_BRANCH:-main}"
-GH_REPO="Lianues/IrisAgent"
+GH_REPO="Lianues/Iris"
 NODE_MAJOR=22
 SERVICE_NAME="iris"
 IS_TERMUX=false
@@ -293,7 +293,7 @@ resolve_download_url() {
 download_and_extract() {
     step "下载 Iris 预编译包"
 
-    local tarball="irisagent-linux-${ARCH}.tar.gz"
+    local tarball="iris-linux-${ARCH}.tar.gz"
     local url
     url=$(resolve_download_url "$tarball")
 
@@ -369,7 +369,7 @@ fallback_build() {
     info "构建二进制发布包..."
     bun run build:compile -- --single 2>&1 | tail -5
 
-    local package_dir="$tmp_dir/dist/bin/irisagent-linux-${ARCH}"
+    local package_dir="$tmp_dir/dist/bin/iris-linux-${ARCH}"
     if [ ! -d "$package_dir" ]; then
         rm -rf "$tmp_dir"
         die "未找到构建产物：$package_dir"

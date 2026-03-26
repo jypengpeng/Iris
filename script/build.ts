@@ -7,12 +7,12 @@
  * 产物内嵌 Bun 运行时、依赖、Web UI 静态资源和 onboard 配置引导工具。
  *
  * 产物结构：
- *   dist/bin/irisagent-{platform}-{arch}/
+ *   dist/bin/iris-{platform}-{arch}/
  *     bin/iris(.exe)            编译后的主程序二进制
  *     bin/iris-onboard(.exe)    交互式配置引导工具
  *     data/                     配置模板和示例文件
  *     web-ui/dist/              Web 平台静态资源
- *     package.json              平台包描述
+ *     package.json              平台包描述（npm 包名使用 irises-{platform}-{arch}）
  *
  * 用法：
  *   bun run script/build.ts            # 编译所有平台
@@ -127,17 +127,18 @@ const binaries: Record<string, string> = {}
 
 for (const target of targets) {
   const platformName = getPlatformName(target.os)
-  const packageName = `irisagent-${platformName}-${target.arch}`
-  const outDir = path.join(distBinDir, packageName)
+  const dirName = `iris-${platformName}-${target.arch}`
+  const npmPackageName = `irises-${platformName}-${target.arch}`
+  const outDir = path.join(distBinDir, dirName)
   const compileTarget = `bun-${target.os}-${target.arch}`
 
-  console.log(`\n=== Building ${packageName} ===`)
+  console.log(`\n=== Building ${dirName} ===`)
   fs.mkdirSync(path.join(outDir, "bin"), { recursive: true })
 
   try {
     await buildCompiledBinary({
       entrypoint: "./src/main.ts",
-      outfile: `dist/bin/${packageName}/bin/iris`,
+      outfile: `dist/bin/${dirName}/bin/iris`,
       target: compileTarget,
       define: {
         IRIS_VERSION: `'${version}'`,
@@ -148,7 +149,7 @@ for (const target of targets) {
 
     await buildCompiledBinary({
       entrypoint: "./onboard/src/index.tsx",
-      outfile: `dist/bin/${packageName}/bin/iris-onboard`,
+      outfile: `dist/bin/${dirName}/bin/iris-onboard`,
       target: compileTarget,
       minify: true,
     })
@@ -167,9 +168,9 @@ for (const target of targets) {
       path.join(outDir, "package.json"),
       JSON.stringify(
         {
-          name: packageName,
+          name: npmPackageName,
           version,
-          description: `Prebuilt ${platformName}-${target.arch} binary for IrisAgent`,
+          description: `Prebuilt ${platformName}-${target.arch} binary for Iris`,
           bin: {
             iris: target.os === "win32" ? "./bin/iris.exe" : "./bin/iris",
           },
@@ -182,8 +183,8 @@ for (const target of targets) {
       ),
     )
 
-    binaries[packageName] = version
-    console.log(`  ✓ ${packageName} built successfully`)
+    binaries[npmPackageName] = version
+    console.log(`  ✓ ${dirName} built successfully`)
   } catch (err) {
     console.error(`  ✗ ${packageName} build failed:`, err)
   }

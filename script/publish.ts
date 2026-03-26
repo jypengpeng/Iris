@@ -6,10 +6,10 @@
  * 将 dist/bin/ 下构建好的平台二进制包和包装器包发布到 npm。
  *
  * 产物结构：
- *   dist/bin/irisagent-linux-x64/      → npm publish (平台包)
- *   dist/bin/irisagent-darwin-arm64/   → npm publish (平台包)
- *   dist/bin/irisagent-windows-x64/    → npm publish (平台包)
- *   dist/bin/irisagent/             → npm publish (包装器包)
+ *   dist/bin/iris-linux-x64/        → npm publish (平台包 irises-linux-x64)
+ *   dist/bin/iris-darwin-arm64/      → npm publish (平台包 irises-darwin-arm64)
+ *   dist/bin/iris-windows-x64/       → npm publish (平台包 irises-windows-x64)
+ *   dist/bin/irises/                 → npm publish (包装器包 irises)
  *
  * 用法：
  *   bun run script/publish.ts
@@ -31,9 +31,9 @@ const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"))
 // 解析 --tag 参数
 const tagIndex = process.argv.indexOf("--tag")
 const tag = tagIndex >= 0 && process.argv[tagIndex + 1] ? process.argv[tagIndex + 1] : "latest"
-const wrapperName = "irisagent"
+const wrapperName = "irises"
 
-// 收集已构建的平台二进制
+// 收集已构建的平台二进制（目录名为 iris-*，但 package.json 中的 npm 包名为 irises-*）
 const distBinDir = path.join(dir, "dist", "bin")
 const binaries: Record<string, string> = {}
 
@@ -42,7 +42,7 @@ for (const entry of fs.readdirSync(distBinDir, { withFileTypes: true })) {
   const pkgJsonPath = path.join(distBinDir, entry.name, "package.json")
   if (!fs.existsSync(pkgJsonPath)) continue
   const p = JSON.parse(fs.readFileSync(pkgJsonPath, "utf8"))
-  if (p.name && p.version && p.name !== wrapperName && p.name.startsWith("irisagent-")) {
+  if (p.name && p.version && p.name !== wrapperName && p.name.startsWith("irises-")) {
     binaries[p.name] = p.version
   }
 }
@@ -114,16 +114,27 @@ fs.writeFileSync(
 
 console.log(`\n包装器包 ${wrapperName}@${version} 已生成`)
 
-// 发布所有平台包
-const publishTasks = Object.keys(binaries).map(async (name) => {
-  const pkgDir = path.join(distBinDir, name)
-  if (process.platform !== "win32") {
-    await $`chmod -R 755 .`.cwd(pkgDir)
-  }
-  console.log(`\n发布 ${name}@${binaries[name]}...`)
-  await $`npm publish --access public --tag ${tag}`.cwd(pkgDir)
-  console.log(`  ✓ ${name} 发布成功`)
-})
+// 发布所有平台包（目录名为 iris-*，需要遍历找到含 irises-* 包名的目录）
+const publishTasks: Promise<void>[] = []
+for (const entry of fs.readdirSync(distBinDir, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue
+  const pkgJsonPath = path.join(distBinDir, entry.name, "package.json")
+  if (!fs.existsSync(pkgJsonPath)) continue
+  const p = JSON.parse(fs.readFileSync(pkgJsonPath, "utf8"))
+  if (!p.name || !p.name.startsWith("irises-")) continue
+
+  const pkgDir = path.join(distBinDir, entry.name)
+  publishTasks.push(
+    (async () => {
+      if (process.platform !== "win32") {
+        await $`chmod -R 755 .`.cwd(pkgDir)
+      }
+      console.log(`\n发布 ${p.name}@${p.version}...`)
+      await $`npm publish --access public --tag ${tag}`.cwd(pkgDir)
+      console.log(`  ✓ ${p.name} 发布成功`)
+    })(),
+  )
+}
 await Promise.all(publishTasks)
 
 // 发布包装器

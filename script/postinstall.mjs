@@ -27,7 +27,7 @@ function detectPlatformAndArch() {
 
 function resolvePackageDir() {
   const { platform, arch } = detectPlatformAndArch()
-  const packageName = `irisagent-${platform}-${arch}`
+  const packageName = `irises-${platform}-${arch}`
   try {
     const packageJsonPath = require.resolve(`${packageName}/package.json`)
     return {

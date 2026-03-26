@@ -1,0 +1,18 @@
+/**
+ * Backend 模块公共入口
+ *
+ * 外部通过 `import { Backend } from '../core/backend'` 引用，
+ * Node/TS 会自动解析到此 index.ts，保持向后兼容。
+ */
+
+export { Backend } from './backend';
+
+export type {
+  UndoScope,
+  UndoOperationResult,
+  RedoOperationResult,
+  ImageInput,
+  DocumentInput,
+  BackendConfig,
+  BackendEvents,
+} from './types';

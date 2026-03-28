@@ -302,3 +302,128 @@ sudo systemctl list-timers | grep certbot
 | 证书申请失败 | 确认 DNS 已指向 VPS、80 端口已开放 |
 | 应用启动失败 | `journalctl -u iris -e` 查看错误日志 |
 | 页面空白 | 确认已执行 `npm run build`，检查 `web-ui/dist/` 是否存在 |
+
+---
+
+## Docker 部署
+
+提供两个镜像变体，均发布到 GitHub Container Registry：
+
+| 镜像 | 基础 | 体积 | 说明 |
+|------|------|------|------|
+| `ghcr.io/lianues/iris:latest` | Node 22 Alpine | ~300 MB | 生产用，适合大多数场景 |
+| `ghcr.io/lianues/iris:computer-use` | Ubuntu + Playwright | ~800 MB | 含 Chromium，支持浏览器自动化 |
+
+### 快速启动（使用预构建镜像）
+
+```bash
+# 下载 compose 文件和环境变量模板
+curl -O https://raw.githubusercontent.com/Lianues/Iris/main/deploy/docker/iris-compose.yml
+curl -O https://raw.githubusercontent.com/Lianues/Iris/main/deploy/docker/iris.env.example
+
+# 创建环境变量文件（按需修改）
+cp iris.env.example .env
+
+# 启动
+docker compose -f iris-compose.yml up -d
+
+# 首次启动后编辑 LLM API Key
+docker compose -f iris-compose.yml exec iris vi /data/configs/llm.yaml
+
+# 重启生效
+docker compose -f iris-compose.yml restart
+```
+
+如需 Computer Use（浏览器自动化）：
+
+```bash
+docker compose -f iris-compose.yml --profile computer-use up -d iris-computer-use
+```
+
+### 从源码构建
+
+```bash
+cd deploy/docker
+
+# 构建并启动 production 镜像
+docker compose up -d
+
+# 或构建 computer-use 镜像
+docker compose --profile computer-use up -d iris-computer-use
+```
+
+也可以直接使用 `docker build`：
+
+```bash
+# 在项目根目录执行
+docker build -t iris -f deploy/docker/Dockerfile .                          # production
+docker build -t iris-cu -f deploy/docker/Dockerfile --target computer-use-base .  # computer-use
+```
+
+### 构建流程
+
+Dockerfile 采用多阶段构建，共 5 个阶段：
+
+```
+Stage 1: deps            ── 安装所有依赖（含 devDeps、原生编译工具）
+Stage 2: build-ui        ── 构建 Vue 3 Web UI（Vite）
+Stage 3: build           ── 编译 TypeScript，然后 npm prune 移除 devDeps
+Stage 4: production      ── Node 22 Alpine 最终镜像（默认 target）
+Stage 5: computer-use    ── Playwright Ubuntu 镜像（含 Chromium）
+```
+
+production 镜像特点：
+- 使用 `tini` 作为 init 进程，正确处理信号转发和僵尸进程回收
+- 以非 root 用户 `iris`（UID 1000）运行
+- 数据目录 `/data` 声明为 VOLUME，配置和会话数据持久化
+
+### 首次启动行为
+
+容器首次启动时，`entrypoint.sh` 会：
+
+1. 检查 `/data/configs/` 是否为空
+2. 如果为空，从 `/app/data/configs.example/` 复制配置模板
+3. 自动将 `host` 从 `127.0.0.1` 改为 `0.0.0.0`（Docker 端口映射需要）
+4. 提示用户编辑 `llm.yaml` 配置 API Key
+
+### 环境变量
+
+通过 `.env` 文件或 `docker compose` 的 `environment` 字段设置：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `IRIS_PLATFORM` | `web` | 启动的平台，逗号分隔（`web,discord,telegram` 等）|
+| `IRIS_PORT` | `8192` | 宿主机映射端口 |
+| `WEB_AUTH_TOKEN` | — | Web API 认证令牌（公网部署建议设置）|
+| `WEB_MANAGEMENT_TOKEN` | — | 管理 API 令牌 |
+
+> **注意**：`console` 平台在 Docker 中不可用（需要 Bun 运行时）。entrypoint 会自动移除并回退到 `web`。
+
+LLM API Key 不通过环境变量配置，而是编辑数据卷中的 `/data/configs/llm.yaml`。
+
+### 数据持久化
+
+容器使用 Docker named volume `iris-data` 挂载到 `/data`，包含：
+
+```
+/data/
+├── configs/          ← 配置文件（首次启动从模板生成）
+│   ├── llm.yaml      ← LLM API Key 和模型配置
+│   ├── platform.yaml  ← 平台和网络配置
+│   └── ...
+└── sessions/         ← 会话数据
+```
+
+备份数据：
+
+```bash
+docker run --rm -v iris-data:/data -v $(pwd):/backup alpine tar czf /backup/iris-data-backup.tar.gz -C /data .
+```
+
+### CI/CD 自动发布
+
+`release.yml` 中的 `publish-docker` job 在推送 `v*` 标签时自动构建并发布镜像到 GHCR，与二进制构建并行运行：
+
+- 使用 Docker Buildx + GitHub Actions 缓存
+- 同时推送 `latest` / `<version>` 和 `computer-use` / `<version>-computer-use` 标签
+- 所需权限：`packages: write`（已在 workflow 中声明）

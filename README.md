@@ -322,6 +322,9 @@ bun run dev              # 启动（含 console TUI）
 bun run build:compile    # 编译为独立二进制
 ```
 
+## 社区支持
+- [LinuxDO](https://linux.do)
+
 ## 许可证
 
 本项目采用 GNU General Public License v3.0 发布，对应 SPDX 标识为 `GPL-3.0-only`。
